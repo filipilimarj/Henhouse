@@ -1,351 +1,1273 @@
-/**
- * API de backend para o HenHouse - Vendas, Geladeira e Depósito de Insumos
- */
-
-var YIELDS_PADRAO = {
-  'Feijoada': 3,
-  'Burguer Carne': 10,
-  'Burguer Frango': 10,
-  'Veggie Burguer': 10,
-  'Cachorro Quente': 10,
-  'Pastel Carne': 5,
-  'Pastel Frango': 5,
-  'Pastel Queijo': 5,
-  'Pipoca Salgada': 10,
-  'Pipoca Doce': 10,
-  'Espetinho Carne': 1,
-  'Espetinho Frango': 1,
-  'Frango Frito': 1,
-  'Maca Amor': 1,
-  'Batata Frita': 1,
-  'Bife': 1,
-  'Cocada': 1,
-  'Pamonha': 1
-};
-
-var CATALOGO_PADRAO = [
-  'Acucar', 'Agua', 'Alface', 'Azeitona', 'Batata', 'Carne Futuro',
-  'Carne Gaivota', 'Carne Servo', 'Cebola', 'Coco Ralado', 'Feijao',
-  'Fermento Biologico', 'Maca', 'Maco Coentro', 'Milho', 'Milho Pipoca',
-  'Oleo Cozinha', 'Ovo', 'Pao', 'Pimentao Verde', 'Presunto', 'Queijo',
-  'Sal', 'Salsicha', 'Tomate', 'Alface Cortado', 'Batata Cortada',
-  'Caramelo', 'Carne Ave Temperada', 'Carne Vermelha Temperada',
-  'Cebola Cortada', 'Massa Pamonha', 'Massa Pastel', 'Pimentao Verde Cortado',
-  'Tomate Cortado', 'Feijoada', 'Burguer Carne', 'Burguer Frango',
-  'Veggie Burguer', 'Pastel Carne', 'Pastel Frango', 'Pastel Queijo',
-  'Espetinho Carne', 'Espetinho Frango', 'Cachorro Quente', 'Batata Frita',
-  'Bife', 'Cocada', 'Pamonha', 'Frango Frito', 'Pipoca Doce', 'Pipoca Salgada',
-  'Maca Amor', 'Suco Maracuja', 'Suco Variado'
-];
-
-function getOrCreateSheet_(name, headers) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
-    sheet.appendRow(headers);
-    return sheet;
-  }
-  var existingHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
-  headers.forEach(function (h, i) {
-    if (existingHeaders[i] !== h) {
-      sheet.getRange(1, i + 1).setValue(h);
-    }
-  });
-  return sheet;
-}
-
-function sheetToObjects_(sheet) {
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return [];
-  var headers = data[0];
-  return data.slice(1)
-    .filter(function (row) { return row[0] !== '' && row[0] !== null; })
-    .map(function (row) {
-      var obj = {};
-      headers.forEach(function (h, i) { obj[h] = row[i]; });
-      return obj;
-    });
-}
-
-function findRowIndexById_(sheet, id) {
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) return i + 1;
-  }
-  return -1;
-}
-
-function deleteRowsByHeaderValue_(sheet, headerName, value) {
-  var lastCol = sheet.getLastColumn();
-  if (lastCol === 0) return 0;
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var columnIndex = headers.indexOf(headerName);
-  if (columnIndex === -1) return 0;
-
-  var data = sheet.getDataRange().getValues();
-  var deletedCount = 0;
-  for (var i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][columnIndex]) === String(value)) {
-      sheet.deleteRow(i + 1);
-      deletedCount++;
-    }
-  }
-  return deletedCount;
-}
-
-function markSalesAsDeposited_(sheet, employeeId, depositId) {
-  var lastCol = sheet.getLastColumn();
-  if (lastCol === 0) return 0;
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var empCol = headers.indexOf('funcionarioId');
-  var depCol = headers.indexOf('depositoId');
-  if (empCol === -1 || depCol === -1) return 0;
-
-  var data = sheet.getDataRange().getValues();
-  var markedCount = 0;
-  for (var i = 1; i < data.length; i++) {
-    var isSameEmployee = String(data[i][empCol]) === String(employeeId);
-    var isPending = !data[i][depCol];
-    if (isSameEmployee && isPending) {
-      sheet.getRange(i + 1, depCol + 1).setValue(depositId);
-      markedCount++;
-    }
-  }
-  return markedCount;
-}
-
-function getOrInitStockSheet_() {
-  var stockSheet = getOrCreateSheet_('EstoqueGeladeira', ['id', 'nome', 'quantidade', 'lote']);
-  var data = stockSheet.getDataRange().getValues();
-  if (data.length <= 1) {
-    Object.keys(YIELDS_PADRAO).forEach(function(prato, idx) {
-      stockSheet.appendRow([idx + 1, prato, 0, YIELDS_PADRAO[prato]]);
-    });
-  }
-  return stockSheet;
-}
-
-function getOrInitInsumosSheet_() {
-  var insumosSheet = getOrCreateSheet_('EstoqueInsumos', ['id', 'nome', 'quantidade']);
-  var data = insumosSheet.getDataRange().getValues();
-  if (data.length <= 1) {
-    CATALOGO_PADRAO.forEach(function(nome, idx) {
-      insumosSheet.appendRow([idx + 1, nome, 0]);
-    });
-  }
-  return insumosSheet;
-}
-
-function processSaleStock_(items) {
-  var stockSheet = getOrInitStockSheet_();
-  var rows = stockSheet.getDataRange().getValues();
-  if (rows.length <= 1) return;
-
-  var headers = rows[0];
-  var nameCol = headers.indexOf('nome');
-  var qtdCol = headers.indexOf('quantidade');
-  var loteCol = headers.indexOf('lote');
-
-  items.forEach(function(item) {
-    var itemName = item.name || item.nome;
-    var qtdSold = Number(item.quantity || item.qty || 1);
-
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][nameCol]).trim().toLowerCase() === String(itemName).trim().toLowerCase()) {
-        var currentQtd = Number(rows[i][qtdCol]) || 0;
-        var batchSize = Number(rows[i][loteCol]) || 1;
-
-        if (currentQtd >= qtdSold) {
-          currentQtd -= qtdSold;
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Hen House - Painel &amp; Estoque</title>
+<script>
+    (function () {
+        var saved = localStorage.getItem('theme');
+        if (saved === 'dark') {
+            document.documentElement.classList.add('dark');
         } else {
-          var needed = qtdSold - currentQtd;
-          var batchesToCook = Math.ceil(needed / batchSize);
-          var totalProduced = batchesToCook * batchSize;
-          currentQtd = (currentQtd + totalProduced) - qtdSold;
+            document.documentElement.classList.remove('dark');
         }
-
-        stockSheet.getRange(i + 1, qtdCol + 1).setValue(currentQtd);
-        rows[i][qtdCol] = currentQtd;
-        break;
+    })();
+</script>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@600;700&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            primary: 'var(--c-primary)',
+            'primary-container': 'var(--c-primary-container)',
+            'on-primary': 'var(--c-on-primary)',
+            secondary: 'var(--c-secondary)',
+            'on-secondary': 'var(--c-on-secondary)',
+            surface: 'var(--c-surface)',
+            'surface-container-lowest': 'var(--c-surface-container-lowest)',
+            'surface-container-low': 'var(--c-surface-container-low)',
+            'surface-container': 'var(--c-surface-container)',
+            'surface-container-high': 'var(--c-surface-container-high)',
+            onSurface: 'var(--c-on-surface)',
+            onSurfaceVariant: 'var(--c-on-surface-variant)',
+            outline: 'var(--c-outline)',
+            outlineVariant: 'var(--c-outline-variant)',
+            background: 'var(--c-background)',
+            error: 'var(--c-error)',
+            onTertiaryContainer: 'var(--c-on-tertiary-container)'
+          }
+        }
       }
     }
-  });
-}
-
-function jsonOutput_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function doGet(e) {
-  var produtosSheet = getOrCreateSheet_('Produtos', ['id', 'nome', 'preco', 'imagem']);
-  var funcSheet = getOrCreateSheet_('Funcionarios', ['id', 'nome', 'comissao']);
-  var vendasSheet = getOrCreateSheet_('Vendas', ['id', 'datahora', 'funcionarioId', 'funcionarioNome', 'itens', 'total', 'itensCount', 'data', 'depositoId']);
-  var depositosSheet = getOrCreateSheet_('Depositos', ['id', 'dataHora', 'funcionarioId', 'funcionarioNome', 'totalVendas', 'comissaoPercentual', 'valorFuncionario', 'valorEmpresa', 'qtdVendas']);
-  var stockSheet = getOrInitStockSheet_();
-  var insumosSheet = getOrInitInsumosSheet_();
-
-  var produtos = sheetToObjects_(produtosSheet).map(function (p) {
-    return { id: String(p.id), name: p.nome, price: Number(p.preco), image: p.imagem };
-  });
-  var funcionarios = sheetToObjects_(funcSheet).map(function (f) {
-    var rate = Number(f.comissao);
-    return { id: String(f.id), name: f.nome, commissionRate: isNaN(rate) ? 5 : rate };
-  });
-  var vendas = sheetToObjects_(vendasSheet).map(function (v) {
-    var itens = [];
-    try { itens = JSON.parse(v.itens); } catch (err) { itens = []; }
-    return {
-      id: v.id,
-      time: v.datahora,
-      date: v.data || '',
-      employeeId: String(v.funcionarioId),
-      employeeName: v.funcionarioNome,
-      items: itens,
-      total: Number(v.total),
-      itemsCount: Number(v.itensCount),
-      depositId: v.depositoId ? String(v.depositoId) : null
-    };
-  });
-  var deposits = sheetToObjects_(depositosSheet).map(function (d) {
-    return {
-      id: String(d.id),
-      dateTime: d.dataHora,
-      employeeId: String(d.funcionarioId),
-      employeeName: d.funcionarioNome,
-      totalSales: Number(d.totalVendas),
-      commissionRate: Number(d.comissaoPercentual),
-      employeeCut: Number(d.valorFuncionario),
-      companyCut: Number(d.valorEmpresa),
-      salesCount: Number(d.qtdVendas)
-    };
-  });
-  var stock = sheetToObjects_(stockSheet).map(function (s) {
-    return {
-      id: String(s.id),
-      name: s.nome,
-      quantity: Number(s.quantidade) || 0,
-      batchSize: Number(s.lote) || 1
-    };
-  });
-  var insumos = sheetToObjects_(insumosSheet).map(function (i) {
-    return {
-      id: String(i.id),
-      name: i.nome,
-      quantity: Number(i.quantidade) || 0
-    };
-  });
-
-  return jsonOutput_({
-    products: produtos,
-    employees: funcionarios,
-    sales: vendas,
-    deposits: deposits,
-    stock: stock,
-    insumos: insumos
-  });
-}
-
-function doPost(e) {
-  var body;
-  try {
-    body = JSON.parse(e.postData.contents);
-  } catch (err) {
-    return jsonOutput_({ ok: false, error: 'JSON inválido' });
-  }
-
-  var lock = LockService.getScriptLock();
-  var acquired = lock.tryLock(30000);
-  if (!acquired) {
-    return jsonOutput_({ ok: false, error: 'Sistema ocupado. Tente novamente em instantes.' });
-  }
-
-  try {
-    var action = body.action;
-    var produtosSheet = getOrCreateSheet_('Produtos', ['id', 'nome', 'preco', 'imagem']);
-    var funcSheet = getOrCreateSheet_('Funcionarios', ['id', 'nome', 'comissao']);
-    var vendasSheet = getOrCreateSheet_('Vendas', ['id', 'datahora', 'funcionarioId', 'funcionarioNome', 'itens', 'total', 'itensCount', 'data', 'depositoId']);
-    var depositosSheet = getOrCreateSheet_('Depositos', ['id', 'dataHora', 'funcionarioId', 'funcionarioNome', 'totalVendas', 'comissaoPercentual', 'valorFuncionario', 'valorEmpresa', 'qtdVendas']);
-    var stockSheet = getOrInitStockSheet_();
-    var insumosSheet = getOrInitInsumosSheet_();
-
-    if (action === 'saveProduct') {
-      var p = body.product;
-      var row = [p.id, p.name, p.price, p.image];
-      var idx = findRowIndexById_(produtosSheet, p.id);
-      if (idx === -1) produtosSheet.appendRow(row);
-      else produtosSheet.getRange(idx, 1, 1, row.length).setValues([row]);
-
-    } else if (action === 'deleteProduct') {
-      var idxD = findRowIndexById_(produtosSheet, body.id);
-      if (idxD !== -1) produtosSheet.deleteRow(idxD);
-
-    } else if (action === 'saveEmployee') {
-      var f = body.employee;
-      var rate = Number(f.commissionRate);
-      var rowF = [f.id, f.name, isNaN(rate) ? 5 : rate];
-      var idxF = findRowIndexById_(funcSheet, f.id);
-      if (idxF === -1) funcSheet.appendRow(rowF);
-      else funcSheet.getRange(idxF, 1, 1, rowF.length).setValues([rowF]);
-
-    } else if (action === 'deleteEmployee') {
-      var idxFD = findRowIndexById_(funcSheet, body.id);
-      if (idxFD !== -1) funcSheet.deleteRow(idxFD);
-      var deletedSalesCount = deleteRowsByHeaderValue_(vendasSheet, 'funcionarioId', body.id);
-      return jsonOutput_({ ok: true, deletedSales: deletedSalesCount });
-
-    } else if (action === 'addSale' || action === 'saveSale') {
-      var s = body.sale;
-      var saleDate = s.date || Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy');
-      var rowS = [s.id, s.time, s.employeeId, s.employeeName, JSON.stringify(s.items), s.total, s.itemsCount, saleDate, ''];
-      vendasSheet.appendRow(rowS);
-
-      if (s.items && Array.isArray(s.items)) {
-        processSaleStock_(s.items);
-      }
-
-    } else if (action === 'updateStock') {
-      var item = body.stockItem;
-      var idxS = findRowIndexById_(stockSheet, item.id);
-      if (idxS !== -1) {
-        stockSheet.getRange(idxS, 3).setValue(Number(item.quantity));
-      }
-
-    } else if (action === 'updateInsumo') {
-      var ins = body.insumo;
-      var idxI = findRowIndexById_(insumosSheet, ins.id);
-      if (idxI !== -1) {
-        insumosSheet.getRange(idxI, 3).setValue(Number(ins.quantity));
-      }
-
-    } else if (action === 'saveInsumo') {
-      var insObj = body.insumo;
-      var rowIns = [insObj.id, insObj.name, Number(insObj.quantity)];
-      var idxIns = findRowIndexById_(insumosSheet, insObj.id);
-      if (idxIns === -1) insumosSheet.appendRow(rowIns);
-      else insumosSheet.getRange(idxIns, 1, 1, rowIns.length).setValues([rowIns]);
-
-    } else if (action === 'deleteInsumo') {
-      var idxDel = findRowIndexById_(insumosSheet, body.id);
-      if (idxDel !== -1) insumosSheet.deleteRow(idxDel);
-
-    } else if (action === 'confirmDeposit') {
-      var dep = body.deposit;
-      var rowDep = [dep.id, dep.dateTime, dep.employeeId, dep.employeeName, dep.totalSales, dep.commissionRate, dep.employeeCut, dep.companyCut, dep.salesCount];
-      depositosSheet.appendRow(rowDep);
-
-      var markedCount = markSalesAsDeposited_(vendasSheet, dep.employeeId, dep.id);
-      return jsonOutput_({ ok: true, salesMarked: markedCount });
-
-    } else {
-      return jsonOutput_({ ok: false, error: 'Ação desconhecida: ' + action });
+</script>
+<style>
+    :root {
+        --c-background: #f8f9fb;
+        --c-surface: #f8f9fb;
+        --c-surface-container-lowest: #ffffff;
+        --c-surface-container-low: #f3f4f6;
+        --c-surface-container: #edeef0;
+        --c-surface-container-high: #e7e8ea;
+        --c-on-surface: #191c1e;
+        --c-on-surface-variant: #434654;
+        --c-primary: #003d9b;
+        --c-primary-container: #0052cc;
+        --c-on-primary: #ffffff;
+        --c-secondary: #4c5e85;
+        --c-on-secondary: #ffffff;
+        --c-outline: #737685;
+        --c-outline-variant: #c3c6d6;
+        --c-error: #ba1a1a;
+        --c-on-tertiary-container: #006842;
     }
 
-    return jsonOutput_({ ok: true });
-  } catch (err) {
-    return jsonOutput_({ ok: false, error: String(err) });
-  } finally {
-    lock.releaseLock();
-  }
-}
+    html.dark {
+        --c-background: #101418;
+        --c-surface: #101418;
+        --c-surface-container-lowest: #151a21;
+        --c-surface-container-low: #1c222c;
+        --c-surface-container: #232a36;
+        --c-surface-container-high: #2c3545;
+        --c-on-surface: #e1e2e4;
+        --c-on-surface-variant: #a0a6b5;
+        --c-primary: #4d8df5;
+        --c-primary-container: #1e5bc6;
+        --c-on-primary: #ffffff;
+        --c-secondary: #8da2cc;
+        --c-on-secondary: #0c1527;
+        --c-outline: #686f80;
+        --c-outline-variant: #2c3442;
+        --c-error: #ffb4ab;
+        --c-on-tertiary-container: #69dca1;
+    }
+
+    body { transition: background-color 0.2s ease, color 0.2s ease; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: var(--c-outline-variant); border-radius: 10px; }
+    @keyframes slideInFade {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-entry { animation: slideInFade 0.2s ease-out forwards; }
+</style>
+</head>
+<body class="bg-background text-onSurface h-screen w-full flex overflow-hidden">
+
+<!-- Barra de Navegação -->
+<nav class="fixed left-0 top-0 h-full w-[260px] bg-surface-container-lowest border-r border-outlineVariant flex flex-col py-6 px-4 z-40">
+    <div class="flex items-center gap-3 mb-8 px-2">
+        <span class="text-3xl">🐔</span>
+        <div>
+            <h1 class="font-bold text-lg leading-tight text-onSurface">The Hen House</h1>
+            <p class="text-xs text-onSurfaceVariant">Restaurante &amp; Estoque</p>
+        </div>
+    </div>
+    
+    <div class="flex flex-col gap-1 flex-1">
+        <a class="nav-tab flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-container-high text-primary font-bold border-r-2 border-primary transition-colors" data-tab="dashboard" href="#">
+            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">point_of_sale</span>
+            <span class="text-xs font-semibold uppercase tracking-wider">PDV Vendas</span>
+        </a>
+        <a class="nav-tab flex items-center gap-3 px-3 py-2 rounded-lg text-onSurfaceVariant hover:text-onSurface hover:bg-surface-container transition-colors" data-tab="geladeira" href="#">
+            <span class="material-symbols-outlined">kitchen</span>
+            <span class="text-xs font-semibold uppercase tracking-wider">Geladeira (Prontos)</span>
+        </a>
+        <a class="nav-tab flex items-center gap-3 px-3 py-2 rounded-lg text-onSurfaceVariant hover:text-onSurface hover:bg-surface-container transition-colors" data-tab="deposito" href="#">
+            <span class="material-symbols-outlined">inventory_2</span>
+            <span class="text-xs font-semibold uppercase tracking-wider">Depósito (Insumos)</span>
+        </a>
+        <a class="nav-tab flex items-center gap-3 px-3 py-2 rounded-lg text-onSurfaceVariant hover:text-onSurface hover:bg-surface-container transition-colors hidden" data-tab="history" href="#" id="nav-tab-history">
+            <span class="material-symbols-outlined">history</span>
+            <span class="text-xs font-semibold uppercase tracking-wider">Vendas Globais</span>
+        </a>
+        <a class="nav-tab flex items-center gap-3 px-3 py-2 rounded-lg text-onSurfaceVariant hover:text-onSurface hover:bg-surface-container transition-colors hidden" data-tab="deposits" href="#" id="nav-tab-deposits">
+            <span class="material-symbols-outlined">payments</span>
+            <span class="text-xs font-semibold uppercase tracking-wider">Depósitos</span>
+        </a>
+    </div>
+
+    <div class="pt-2 border-t border-outlineVariant">
+        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-onSurfaceVariant hover:text-onSurface hover:bg-surface-container transition-colors" id="btn-theme-toggle" type="button">
+            <span class="material-symbols-outlined" id="theme-toggle-icon">dark_mode</span>
+            <span class="text-xs font-semibold uppercase tracking-wider" id="theme-toggle-label">Tema Escuro</span>
+        </button>
+    </div>
+    <div class="pt-2 border-t border-outlineVariant">
+        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-onSurfaceVariant hover:text-onSurface hover:bg-surface-container transition-colors" id="btn-manager-toggle" type="button">
+            <span class="material-symbols-outlined" id="manager-toggle-icon">lock</span>
+            <span class="text-xs font-semibold uppercase tracking-wider" id="manager-toggle-label">Gerência</span>
+        </button>
+    </div>
+</nav>
+
+<!-- Modal Gerência -->
+<div class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4" id="manager-modal">
+    <div class="bg-surface-container-lowest border border-outlineVariant rounded-xl shadow-2xl w-full max-w-[380px] p-6 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-secondary">lock</span>
+                <h3 class="font-semibold text-onSurface text-base">Acesso da Gerência</h3>
+            </div>
+            <button class="text-outline hover:text-onSurface" id="manager-modal-close" type="button"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <p class="text-xs text-onSurfaceVariant">Informe a senha para liberar o controle administrativo.</p>
+        <div>
+            <input autocomplete="off" class="w-full bg-surface border border-outlineVariant rounded-lg px-3 py-2 font-mono text-onSurface focus:border-primary focus:outline-none text-sm" id="manager-password-input" type="password" placeholder="Senha..."/>
+            <p class="text-xs text-error mt-1 hidden" id="manager-modal-error">Senha incorreta.</p>
+        </div>
+        <div class="flex justify-end gap-2">
+            <button class="px-4 py-2 rounded-lg text-xs font-semibold text-onSurfaceVariant hover:bg-surface-container" id="manager-modal-cancel" type="button">Cancelar</button>
+            <button class="px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-on-primary" id="manager-modal-confirm" type="button">Entrar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Funcionário -->
+<div class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4" id="employee-modal">
+    <div class="bg-surface-container-lowest border border-outlineVariant rounded-xl shadow-2xl w-full max-w-[380px] p-6 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+            <h3 class="font-semibold text-onSurface text-base" id="employee-modal-title">Editar Funcionário</h3>
+            <button class="text-outline hover:text-onSurface" id="employee-modal-close" type="button"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <div>
+            <label class="text-xs font-semibold text-onSurfaceVariant mb-1 block">Nome do Funcionário</label>
+            <input class="w-full bg-surface border border-outlineVariant rounded-lg px-3 py-2 text-sm text-onSurface focus:border-primary focus:outline-none" id="employee-form-name" type="text"/>
+        </div>
+        <div>
+            <label class="text-xs font-semibold text-onSurfaceVariant mb-1 block">Comissão (%)</label>
+            <input class="w-full bg-surface border border-outlineVariant rounded-lg px-3 py-2 font-mono text-sm text-onSurface focus:border-primary focus:outline-none" id="employee-form-commission" max="100" min="0" step="0.1" type="number" value="5"/>
+        </div>
+        <p class="text-xs text-error hidden" id="employee-modal-error"></p>
+        <div class="flex items-center justify-between gap-2 mt-2">
+            <button class="text-error text-xs font-semibold hover:underline hidden" id="employee-form-delete" type="button">Remover</button>
+            <div class="flex gap-2 ml-auto">
+                <button class="px-4 py-2 rounded-lg text-xs font-semibold text-onSurfaceVariant hover:bg-surface-container" id="employee-modal-cancel" type="button">Cancelar</button>
+                <button class="px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-on-primary" id="employee-form-save" type="button">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Insumo com LISTA SUSPENSA DO CATÁLOGO COMPLETO -->
+<div class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4" id="insumo-modal">
+    <div class="bg-surface-container-lowest border border-outlineVariant rounded-xl shadow-2xl w-full max-w-[420px] p-6 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+            <h3 class="font-semibold text-onSurface text-base" id="insumo-modal-title">Adicionar / Ajustar Item</h3>
+            <button class="text-outline hover:text-onSurface" id="insumo-modal-close" type="button"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <div>
+            <label class="text-xs font-semibold text-onSurfaceVariant mb-1 block">Selecione o Item da Planilha</label>
+            <select class="w-full bg-surface border border-outlineVariant rounded-lg px-3 py-2 text-xs text-onSurface focus:border-primary focus:outline-none" id="insumo-form-select">
+                <option value="">-- Escolha um item do catálogo --</option>
+                <optgroup label="Matérias-Primas (25 Itens)">
+                    <option value="Acucar">Acucar</option>
+                    <option value="Agua">Agua</option>
+                    <option value="Alface">Alface</option>
+                    <option value="Azeitona">Azeitona</option>
+                    <option value="Batata">Batata</option>
+                    <option value="Carne Futuro">Carne Futuro</option>
+                    <option value="Carne Gaivota">Carne Gaivota</option>
+                    <option value="Carne Servo">Carne Servo</option>
+                    <option value="Cebola">Cebola</option>
+                    <option value="Coco Ralado">Coco Ralado</option>
+                    <option value="Feijao">Feijao</option>
+                    <option value="Fermento Biologico">Fermento Biologico</option>
+                    <option value="Maca">Maca</option>
+                    <option value="Maco Coentro">Maco Coentro</option>
+                    <option value="Milho">Milho</option>
+                    <option value="Milho Pipoca">Milho Pipoca</option>
+                    <option value="Oleo Cozinha">Oleo Cozinha</option>
+                    <option value="Ovo">Ovo</option>
+                    <option value="Pao">Pao</option>
+                    <option value="Pimentao Verde">Pimentao Verde</option>
+                    <option value="Presunto">Presunto</option>
+                    <option value="Queijo">Queijo</option>
+                    <option value="Sal">Sal</option>
+                    <option value="Salsicha">Salsicha</option>
+                    <option value="Tomate">Tomate</option>
+                </optgroup>
+                <optgroup label="Ingredientes Preparados (10 Itens)">
+                    <option value="Alface Cortado">Alface Cortado</option>
+                    <option value="Batata Cortada">Batata Cortada</option>
+                    <option value="Caramelo">Caramelo</option>
+                    <option value="Carne Ave Temperada">Carne Ave Temperada</option>
+                    <option value="Carne Vermelha Temperada">Carne Vermelha Temperada</option>
+                    <option value="Cebola Cortada">Cebola Cortada</option>
+                    <option value="Massa Pamonha">Massa Pamonha</option>
+                    <option value="Massa Pastel">Massa Pastel</option>
+                    <option value="Pimentao Verde Cortado">Pimentao Verde Cortado</option>
+                    <option value="Tomate Cortado">Tomate Cortado</option>
+                </optgroup>
+                <optgroup label="Pratos Prontos (20 Itens)">
+                    <option value="Feijoada">Feijoada</option>
+                    <option value="Burguer Carne">Burguer Carne</option>
+                    <option value="Burguer Frango">Burguer Frango</option>
+                    <option value="Veggie Burguer">Veggie Burguer</option>
+                    <option value="Pastel Carne">Pastel Carne</option>
+                    <option value="Pastel Frango">Pastel Frango</option>
+                    <option value="Pastel Queijo">Pastel Queijo</option>
+                    <option value="Espetinho Carne">Espetinho Carne</option>
+                    <option value="Espetinho Frango">Espetinho Frango</option>
+                    <option value="Cachorro Quente">Cachorro Quente</option>
+                    <option value="Batata Frita">Batata Frita</option>
+                    <option value="Bife">Bife</option>
+                    <option value="Cocada">Cocada</option>
+                    <option value="Pamonha">Pamonha</option>
+                    <option value="Frango Frito">Frango Frito</option>
+                    <option value="Pipoca Doce">Pipoca Doce</option>
+                    <option value="Pipoca Salgada">Pipoca Salgada</option>
+                    <option value="Maca Amor">Maca Amor</option>
+                    <option value="Suco Maracuja">Suco Maracuja</option>
+                    <option value="Suco Variado">Suco Variado</option>
+                </optgroup>
+            </select>
+        </div>
+        <div id="insumo-stock-preview" class="text-xs text-onSurfaceVariant bg-surface-container p-2 rounded hidden">
+            <span>Estoque atual deste item: </span><b class="text-primary font-mono" id="insumo-current-qty">0</b>
+        </div>
+        <div>
+            <label class="text-xs font-semibold text-onSurfaceVariant mb-1 block">Quantidade no Depósito</label>
+            <input class="w-full bg-surface border border-outlineVariant rounded-lg px-3 py-2 font-mono text-sm text-onSurface focus:border-primary focus:outline-none" id="insumo-form-quantity" min="0" step="1" type="number" value="0"/>
+        </div>
+        <p class="text-xs text-error hidden" id="insumo-modal-error"></p>
+        <div class="flex items-center justify-between gap-2 mt-2">
+            <button class="text-error text-xs font-semibold hover:underline hidden" id="insumo-form-delete" type="button">Excluir do Depósito</button>
+            <div class="flex gap-2 ml-auto">
+                <button class="px-4 py-2 rounded-lg text-xs font-semibold text-onSurfaceVariant hover:bg-surface-container" id="insumo-modal-cancel" type="button">Cancelar</button>
+                <button class="px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-on-primary" id="insumo-form-save" type="button">Salvar Estoque</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="fixed bottom-6 right-6 z-[60] flex flex-col gap-2 items-end pointer-events-none" id="toast-container"></div>
+
+<!-- Workspace -->
+<div class="ml-[260px] flex-1 flex flex-row h-full">
+    <aside class="w-[220px] border-r border-outlineVariant bg-surface-container-lowest flex flex-col shadow-sm">
+        <div class="p-4 border-b border-outlineVariant flex items-center gap-2 sticky top-0 bg-surface-container-lowest z-10">
+            <span class="material-symbols-outlined text-secondary">groups</span>
+            <h3 class="font-semibold text-onSurface text-base">Funcionários</h3>
+        </div>
+        <ul class="flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1" id="employee-list"></ul>
+        <div class="p-2 border-t border-outlineVariant hidden" id="add-employee-wrapper">
+            <button class="w-full bg-secondary text-on-secondary hover:opacity-90 rounded-lg py-2 px-3 flex items-center justify-center gap-1 text-xs font-semibold shadow-sm" id="btn-add-employee" type="button">
+                <span class="material-symbols-outlined text-base">person_add</span> Novo Funcionário
+            </button>
+        </div>
+    </aside>
+
+    <!-- Tela 1: PDV de Vendas -->
+    <main class="flex-1 flex flex-col p-6 overflow-hidden bg-background" id="view-dashboard">
+        <header class="mb-4 flex justify-between items-end">
+            <div>
+                <h2 class="font-bold text-2xl text-onSurface">Nova Venda</h2>
+                <p class="text-xs text-onSurfaceVariant mt-1" id="active-employee-label">Selecione um funcionário para iniciar a venda.</p>
+            </div>
+            <div class="text-right">
+                <div class="text-[10px] font-bold uppercase text-outline">TERMINAL ID</div>
+                <div class="font-mono text-xs text-secondary font-semibold">TRM-HENHOUSE</div>
+            </div>
+        </header>
+
+        <div class="relative mb-3">
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-lg pointer-events-none">search</span>
+            <input class="w-full bg-surface border border-outlineVariant rounded-lg pl-10 pr-3 py-2 text-xs text-onSurface focus:border-primary focus:outline-none" id="product-search" placeholder="Buscar produto..." type="text"/>
+        </div>
+
+        <div class="overflow-y-auto custom-scrollbar mb-4 pr-1" style="max-height: 38vh;">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2" id="product-grid"></div>
+        </div>
+
+        <div class="flex-1 bg-surface-container-lowest border border-outlineVariant rounded-xl flex flex-col overflow-hidden shadow-sm">
+            <div class="bg-surface-container-low border-b border-outlineVariant px-4 py-2 grid grid-cols-[1fr_100px_70px_110px_40px] gap-2 items-center text-xs font-bold uppercase text-onSurfaceVariant">
+                <span>Item</span>
+                <span class="text-right">Unitário</span>
+                <span class="text-center">Qtd</span>
+                <span class="text-right">Subtotal</span>
+                <span></span>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-2" id="cart-container">
+                <div class="h-full flex flex-col items-center justify-center text-outline opacity-60" id="empty-cart-state">
+                    <span class="material-symbols-outlined text-4xl mb-1 font-light">receipt_long</span>
+                    <p class="text-sm">Nenhum item adicionado à venda.</p>
+                </div>
+                <ul class="flex flex-col gap-1 hidden" id="cart-list"></ul>
+            </div>
+            <div class="border-t border-outlineVariant bg-surface-container-lowest p-4 flex items-end justify-between">
+                <div>
+                    <p class="text-[10px] font-bold uppercase text-onSurfaceVariant">VALOR TOTAL DA VENDA</p>
+                    <div class="font-mono text-3xl font-bold text-primary" id="display-total">$0,00</div>
+                </div>
+                <button class="bg-primary text-on-primary disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 rounded-xl px-6 py-3 flex items-center gap-2 text-sm font-bold shadow-sm" disabled="" id="btn-finalize">
+                    <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                    Finalizar Venda
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Tela 2: Geladeira (Pratos Prontos) -->
+    <main class="flex-1 flex-col p-6 overflow-hidden bg-background hidden" id="view-geladeira">
+        <header class="mb-4 flex justify-between items-end gap-4">
+            <div>
+                <h2 class="font-bold text-2xl text-onSurface">❄️ Geladeira &amp; Pratos Prontos</h2>
+                <p class="text-xs text-onSurfaceVariant mt-1">Comidas já produzidas prontas para venda. Sobras de fornadas entram aqui automaticamente.</p>
+            </div>
+            <button class="px-3 py-2 bg-surface border border-outlineVariant rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-surface-container text-onSurface" id="btn-sync-stock" type="button">
+                <span class="material-symbols-outlined text-sm">sync</span> Atualizar
+            </button>
+        </header>
+        <div class="flex-1 overflow-y-auto custom-scrollbar pr-1">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" id="geladeira-grid"></div>
+        </div>
+    </main>
+
+    <!-- Tela 3: Depósito de Insumos -->
+    <main class="flex-1 flex-col p-6 overflow-hidden bg-background hidden" id="view-deposito">
+        <header class="mb-4 flex justify-between items-end gap-4">
+            <div>
+                <h2 class="font-bold text-2xl text-onSurface">📦 Depósito &amp; Despensa de Insumos</h2>
+                <p class="text-xs text-onSurfaceVariant mt-1">Ingredientes e matérias-primas. Na Gerência, você seleciona qualquer item oficial e define a quantidade exata.</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button class="px-3 py-2 bg-primary text-on-primary rounded-lg text-xs font-bold flex items-center gap-1 hover:opacity-90 hidden" id="btn-add-insumo" type="button">
+                    <span class="material-symbols-outlined text-base">add</span> Adicionar Item
+                </button>
+                <div class="relative min-w-[200px]">
+                    <input class="w-full bg-surface border border-outlineVariant rounded-lg pl-3 pr-3 py-2 text-xs text-onSurface focus:border-primary focus:outline-none" id="insumo-search" placeholder="Buscar ingrediente..." type="text"/>
+                </div>
+            </div>
+        </header>
+        <div class="flex-1 bg-surface-container-lowest border border-outlineVariant rounded-xl flex flex-col overflow-hidden shadow-sm">
+            <div class="bg-surface-container-low border-b border-outlineVariant px-4 py-2 grid grid-cols-[1fr_120px_240px] gap-2 items-center text-xs font-bold uppercase text-onSurfaceVariant">
+                <span>Item / Matéria-Prima</span>
+                <span class="text-center">Qtd Atual</span>
+                <span class="text-right">Ajuste de Estoque</span>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+                <ul class="flex flex-col gap-1" id="insumos-list"></ul>
+            </div>
+        </div>
+    </main>
+
+    <!-- Tela 4: Vendas Globais (Gerência) -->
+    <main class="flex-1 flex-col p-6 overflow-hidden bg-background hidden" id="view-history">
+        <header class="mb-4 flex justify-between items-end gap-4">
+            <div>
+                <h2 class="font-bold text-2xl text-onSurface">Vendas Globais</h2>
+                <p class="text-xs text-onSurfaceVariant mt-1">Histórico completo de vendas de todos os caixas.</p>
+            </div>
+            <div>
+                <select class="bg-surface border border-outlineVariant rounded-lg px-3 py-2 text-xs text-onSurface focus:border-primary focus:outline-none min-w-[200px]" id="history-filter-employee">
+                    <option value="">Todos os funcionários</option>
+                </select>
+            </div>
+        </header>
+        <div class="flex-1 bg-surface-container-lowest border border-outlineVariant rounded-xl flex flex-col overflow-hidden shadow-sm">
+            <div class="bg-surface-container-low border-b border-outlineVariant px-4 py-2 grid grid-cols-[80px_130px_1fr_90px_80px_110px] gap-2 items-center text-xs font-bold uppercase text-onSurfaceVariant">
+                <span>Venda</span>
+                <span>Vendedor</span>
+                <span>Itens</span>
+                <span class="text-center">Data</span>
+                <span class="text-center">Hora</span>
+                <span class="text-right">Total</span>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-2" id="full-history-container">
+                <div class="h-full flex flex-col items-center justify-center text-outline opacity-60" id="empty-full-history-state">
+                    <span class="material-symbols-outlined text-4xl mb-1 font-light">history</span>
+                    <p class="text-sm">Nenhuma venda registrada ainda.</p>
+                </div>
+                <ul class="flex flex-col gap-1 hidden" id="full-history-list"></ul>
+            </div>
+        </div>
+    </main>
+
+    <!-- Tela 5: Depósitos Realizados (Gerência) -->
+    <main class="flex-1 flex-col p-6 overflow-hidden bg-background hidden" id="view-deposits">
+        <header class="mb-4 flex justify-between items-end gap-4">
+            <div>
+                <h2 class="font-bold text-2xl text-onSurface">Histórico de Depósitos</h2>
+                <p class="text-xs text-onSurfaceVariant mt-1">Depósitos confirmados pelos funcionários para o restaurante.</p>
+            </div>
+        </header>
+        <div class="flex-1 bg-surface-container-lowest border border-outlineVariant rounded-xl flex flex-col overflow-hidden shadow-sm">
+            <div class="bg-surface-container-low border-b border-outlineVariant px-4 py-2 grid grid-cols-[130px_1fr_70px_100px_90px_100px_110px] gap-2 items-center text-xs font-bold uppercase text-onSurfaceVariant">
+                <span>Vendedor</span>
+                <span>Data/Hora</span>
+                <span class="text-center">Vendas</span>
+                <span class="text-right">Total</span>
+                <span class="text-right">Comissão</span>
+                <span class="text-right">Parte Func.</span>
+                <span class="text-right">Parte Empresa</span>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-2" id="deposits-container">
+                <div class="h-full flex flex-col items-center justify-center text-outline opacity-60" id="empty-deposits-state">
+                    <span class="material-symbols-outlined text-4xl mb-1 font-light">payments</span>
+                    <p class="text-sm">Nenhum depósito confirmado ainda.</p>
+                </div>
+                <ul class="flex flex-col gap-1 hidden" id="deposits-list"></ul>
+            </div>
+        </div>
+    </main>
+
+    <!-- Sidebar Direita -->
+    <aside class="w-[330px] border-l border-outlineVariant bg-surface-container-lowest flex flex-col z-30 shadow-sm" id="right-sidebar">
+        <div class="p-4 border-b border-outlineVariant flex items-center justify-between bg-surface-container-lowest sticky top-0 z-10">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-secondary">history</span>
+                <h3 class="font-semibold text-onSurface text-base">Vendas do Dia</h3>
+            </div>
+            <div class="bg-surface-container py-1 px-2 rounded font-mono text-[10px] font-bold text-onSurfaceVariant" id="day-counter">0 VENDAS</div>
+        </div>
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-3" id="history-container">
+            <div class="h-full flex flex-col items-center justify-center text-outline opacity-50 mt-12" id="empty-history-state">
+                <span class="material-symbols-outlined text-3xl mb-1 font-light">hourglass_empty</span>
+                <p class="text-xs text-center">Nenhuma venda pendente no turno atual.</p>
+            </div>
+            <ul class="flex flex-col gap-2 hidden" id="history-list"></ul>
+        </div>
+        <div class="border-t border-outlineVariant bg-surface-container-lowest p-4">
+            <h4 class="text-[10px] font-bold uppercase text-onSurfaceVariant mb-3 flex items-center gap-1">
+                <span class="material-symbols-outlined text-sm">monitoring</span> Fechamento &amp; Comissão
+            </h4>
+            <div class="mb-3">
+                <label class="flex justify-between items-center mb-1 text-xs font-semibold" for="comm-rate">
+                    <span>Taxa de Comissão (%)</span>
+                    <span class="text-outline text-[10px]">definida pela gerência</span>
+                </label>
+                <div class="relative">
+                    <input class="w-full bg-surface border border-outlineVariant rounded-lg px-3 py-1.5 font-mono text-xs text-onSurface pr-7 disabled:opacity-60" disabled="" id="comm-rate" type="number" value="5"/>
+                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-outline font-mono text-xs">%</span>
+                </div>
+            </div>
+            <div class="flex flex-col gap-2 bg-surface-container-low rounded-lg p-3 border border-outlineVariant text-xs">
+                <div class="flex justify-between items-center">
+                    <span class="text-onSurfaceVariant">Total Vendido:</span>
+                    <span class="font-mono font-bold text-onSurface" id="disp-total-sales">$0,00</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-onSurfaceVariant">Parte do Funcionário:</span>
+                    <span class="font-mono font-bold text-onTertiaryContainer bg-green-100 dark:bg-green-900/40 px-1 rounded" id="disp-your-cut">$0,00</span>
+                </div>
+                <div class="h-px w-full bg-outlineVariant my-1"></div>
+                <div class="flex justify-between items-center">
+                    <span class="font-semibold text-onSurface">Repasse para a Casa:</span>
+                    <span class="font-mono font-bold text-primary" id="disp-company-cut">$0,00</span>
+                </div>
+            </div>
+            <button class="w-full mt-3 bg-primary text-on-primary hover:opacity-90 rounded-lg py-2 flex items-center justify-center gap-1 text-xs font-bold shadow-sm disabled:opacity-40 disabled:cursor-not-allowed" disabled="" id="btn-confirm-deposit" type="button">
+                <span class="material-symbols-outlined text-sm">payments</span> Confirmar Depósito para a Casa
+            </button>
+            <p class="text-[10px] text-onSurfaceVariant mt-1 text-center">Zera o turno pendente do funcionário e registra o depósito.</p>
+        </div>
+    </aside>
+</div>
+
+<!-- Scripts -->
+<script>
+    const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwm4ryK7Ru8kVslzardq1CkukZUWyQhmN66SSOZG59sSQpGhcHMpuXoBvyjWYR99xtepw/exec';
+
+    const api = {
+        async load() {
+            if (!WEBAPP_URL || WEBAPP_URL.startsWith('COLE_AQUI')) return null;
+            try {
+                const res = await fetch(WEBAPP_URL, { method: 'GET' });
+                return await res.json();
+            } catch (err) {
+                console.error('Falha ao carregar dados:', err);
+                return null;
+            }
+        },
+        async send(action, payload) {
+            if (!WEBAPP_URL || WEBAPP_URL.startsWith('COLE_AQUI')) return { ok: false, offline: true };
+            try {
+                const res = await fetch(WEBAPP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action, ...payload })
+                });
+                return await res.json();
+            } catch (err) {
+                console.error('Falha na comunicação (' + action + '):', err);
+                return { ok: false, error: String(err) };
+            }
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        let currentCart = [];
+        let salesHistory = [];
+        let deposits = [];
+        let stockData = [];
+        let insumosData = [];
+        let saleCounter = 1001;
+        let depositCounter = 1;
+        let editingInsumoId = null;
+
+        let products = [
+            { id: 'p1', name: 'Feijoada', price: 150.00, image: 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?w=300' },
+            { id: 'p2', name: 'Burguer Carne', price: 120.00, image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300' },
+            { id: 'p3', name: 'Burguer Frango', price: 120.00, image: 'https://images.unsplash.com/photo-1521305916504-4a1121188589?w=300' },
+            { id: 'p4', name: 'Pastel Carne', price: 120.00, image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?w=300' },
+            { id: 'p5', name: 'Pastel Frango', price: 120.00, image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?w=300' },
+            { id: 'p6', name: 'Cachorro Quente', price: 120.00, image: 'https://images.unsplash.com/photo-1619740455993-9e612b1af08a?w=300' },
+            { id: 'p7', name: 'Batata Frita', price: 90.00, image: 'https://images.unsplash.com/photo-1576107232684-1279f3908594?w=300' },
+            { id: 'p8', name: 'Pipoca Salgada', price: 90.00, image: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?w=300' }
+        ];
+
+        const MANAGER_PASSWORD = 'Hh2026_FS';
+        let isManagerMode = false;
+
+        let employees = [
+            { id: 'e1', name: 'Ana Souza', commissionRate: 5 },
+            { id: 'e2', name: 'Carlos Lima', commissionRate: 5 },
+            { id: 'e3', name: 'Beatriz Rocha', commissionRate: 5 }
+        ];
+        let selectedEmployeeId = null;
+
+        const cartList = document.getElementById('cart-list');
+        const emptyCartState = document.getElementById('empty-cart-state');
+        const displayTotal = document.getElementById('display-total');
+        const btnFinalize = document.getElementById('btn-finalize');
+        const activeEmployeeLabel = document.getElementById('active-employee-label');
+        const employeeListEl = document.getElementById('employee-list');
+
+        const productGrid = document.getElementById('product-grid');
+        const productSearchInput = document.getElementById('product-search');
+        
+        const historyList = document.getElementById('history-list');
+        const emptyHistoryState = document.getElementById('empty-history-state');
+        const dayCounter = document.getElementById('day-counter');
+
+        const fullHistoryList = document.getElementById('full-history-list');
+        const emptyFullHistoryState = document.getElementById('empty-full-history-state');
+        const historyFilterEmployeeSelect = document.getElementById('history-filter-employee');
+        let historyFilterEmployeeId = '';
+
+        const inputCommRate = document.getElementById('comm-rate');
+        const dispTotalSales = document.getElementById('disp-total-sales');
+        const dispYourCut = document.getElementById('disp-your-cut');
+        const dispCompanyCut = document.getElementById('disp-company-cut');
+
+        const btnThemeToggle = document.getElementById('btn-theme-toggle');
+        const themeToggleIcon = document.getElementById('theme-toggle-icon');
+        const themeToggleLabel = document.getElementById('theme-toggle-label');
+
+        const btnManagerToggle = document.getElementById('btn-manager-toggle');
+        const managerToggleIcon = document.getElementById('manager-toggle-icon');
+        const managerToggleLabel = document.getElementById('manager-toggle-label');
+        const managerModal = document.getElementById('manager-modal');
+        const managerPasswordInput = document.getElementById('manager-password-input');
+        const managerModalError = document.getElementById('manager-modal-error');
+        const managerModalConfirm = document.getElementById('manager-modal-confirm');
+        const managerModalCancel = document.getElementById('manager-modal-cancel');
+        const managerModalClose = document.getElementById('manager-modal-close');
+        const addEmployeeWrapper = document.getElementById('add-employee-wrapper');
+        const navTabHistory = document.getElementById('nav-tab-history');
+        const navTabDeposits = document.getElementById('nav-tab-deposits');
+        const depositsList = document.getElementById('deposits-list');
+        const emptyDepositsState = document.getElementById('empty-deposits-state');
+        const btnConfirmDeposit = document.getElementById('btn-confirm-deposit');
+        const btnAddInsumo = document.getElementById('btn-add-insumo');
+
+        const insumoModal = document.getElementById('insumo-modal');
+        const insumoModalTitle = document.getElementById('insumo-modal-title');
+        const insumoFormSelect = document.getElementById('insumo-form-select');
+        const insumoFormQuantity = document.getElementById('insumo-form-quantity');
+        const insumoStockPreview = document.getElementById('insumo-stock-preview');
+        const insumoCurrentQty = document.getElementById('insumo-current-qty');
+        const insumoModalError = document.getElementById('insumo-modal-error');
+        const insumoFormDelete = document.getElementById('insumo-form-delete');
+        const insumoFormSave = document.getElementById('insumo-form-save');
+        const insumoModalClose = document.getElementById('insumo-modal-close');
+        const insumoModalCancel = document.getElementById('insumo-modal-cancel');
+
+        const toastContainer = document.getElementById('toast-container');
+        const navTabs = document.querySelectorAll('.nav-tab');
+        const views = {
+            dashboard: document.getElementById('view-dashboard'),
+            geladeira: document.getElementById('view-geladeira'),
+            deposito: document.getElementById('view-deposito'),
+            history: document.getElementById('view-history'),
+            deposits: document.getElementById('view-deposits')
+        };
+
+        const formatCurrency = (val) => '$' + Number(val).toFixed(2).replace('.', ',');
+        const getSelectedEmployee = () => employees.find(emp => String(emp.id) === String(selectedEmployeeId)) || null;
+
+        const toast = (message, type = 'success') => {
+            const el = document.createElement('div');
+            const isError = type === 'error';
+            el.className = `pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg text-xs font-semibold animate-entry ${isError ? 'bg-error text-white' : 'bg-green-700 text-white'}`;
+            el.innerHTML = `<span>${message}</span>`;
+            toastContainer.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = '0';
+                setTimeout(() => el.remove(), 300);
+            }, 2500);
+        };
+
+        const applyTheme = (theme) => {
+            const isDark = theme === 'dark';
+            document.documentElement.classList.toggle('dark', isDark);
+            themeToggleIcon.textContent = isDark ? 'light_mode' : 'dark_mode';
+            themeToggleLabel.textContent = isDark ? 'Tema Claro' : 'Tema Escuro';
+            localStorage.setItem('theme', theme);
+        };
+
+        btnThemeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            applyTheme(isDark ? 'light' : 'dark');
+        });
+
+        applyTheme(localStorage.getItem('theme') === 'dark' ? 'dark' : 'light');
+
+        const renderEmployeeList = () => {
+            employeeListEl.innerHTML = '';
+            employees.forEach(emp => {
+                const isActive = emp.id === selectedEmployeeId;
+                const li = document.createElement('li');
+                li.className = 'flex items-center gap-1';
+                li.innerHTML = `
+                    <button type="button" class="employee-btn flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs ${isActive ? 'bg-primary text-on-primary font-bold' : 'text-onSurface hover:bg-surface-container'}" data-employee-id="${emp.id}">
+                        <span class="material-symbols-outlined text-base">person</span>
+                        <div class="truncate">${emp.name}</div>
+                    </button>
+                `;
+                employeeListEl.appendChild(li);
+            });
+            renderHistoryFilterOptions();
+        };
+
+        const renderHistoryFilterOptions = () => {
+            if (!historyFilterEmployeeSelect) return;
+            historyFilterEmployeeSelect.innerHTML = '<option value="">Todos os funcionários</option>';
+            employees.forEach(emp => {
+                const opt = document.createElement('option');
+                opt.value = emp.id;
+                opt.textContent = emp.name;
+                historyFilterEmployeeSelect.appendChild(opt);
+            });
+        };
+
+        const selectEmployee = (employeeId) => {
+            selectedEmployeeId = employeeId;
+            renderEmployeeList();
+            const emp = getSelectedEmployee();
+            activeEmployeeLabel.textContent = emp ? `Caixa: ${emp.name}` : 'Selecione um funcionário para iniciar a venda.';
+            inputCommRate.value = emp ? (emp.commissionRate ?? 5) : 5;
+            updateCartUI();
+            updateHistoryUI();
+        };
+
+        const switchTab = (tabName) => {
+            Object.entries(views).forEach(([key, el]) => {
+                if (!el) return;
+                if (key === tabName) {
+                    el.classList.remove('hidden');
+                    el.classList.add('flex');
+                } else {
+                    el.classList.add('hidden');
+                    el.classList.remove('flex');
+                }
+            });
+            navTabs.forEach(tab => {
+                if (tab.dataset.tab === tabName) {
+                    tab.classList.add('bg-surface-container-high', 'text-primary', 'font-bold', 'border-r-2', 'border-primary');
+                    tab.classList.remove('text-onSurfaceVariant');
+                } else {
+                    tab.classList.remove('bg-surface-container-high', 'text-primary', 'font-bold', 'border-r-2', 'border-primary');
+                    tab.classList.add('text-onSurfaceVariant');
+                }
+            });
+        };
+
+        navTabs.forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                if ((tab.dataset.tab === 'history' || tab.dataset.tab === 'deposits') && !isManagerMode) return;
+                switchTab(tab.dataset.tab);
+                if (tab.dataset.tab === 'geladeira') renderGeladeira();
+                if (tab.dataset.tab === 'deposito') renderInsumos();
+                if (tab.dataset.tab === 'history') updateFullHistoryUI();
+                if (tab.dataset.tab === 'deposits') updateDepositsUI();
+            });
+        });
+
+        // Catálogo e Carrinho
+        const renderProducts = () => {
+            productGrid.innerHTML = '';
+            const search = productSearchInput.value.trim().toLowerCase();
+            const list = search ? products.filter(p => p.name.toLowerCase().includes(search)) : products;
+
+            list.forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'bg-surface-container-lowest border border-outlineVariant rounded-xl p-2 flex flex-col gap-1 shadow-sm';
+                card.innerHTML = `
+                    <img alt="${product.name}" class="w-full h-20 object-cover rounded-lg" src="${product.image}"/>
+                    <h3 class="text-xs font-semibold text-onSurface truncate">${product.name}</h3>
+                    <p class="font-mono text-xs text-primary font-bold">${formatCurrency(product.price)}</p>
+                    <div class="flex items-center gap-1 mt-auto">
+                        <input class="w-12 bg-surface border border-outlineVariant rounded px-1 py-1 font-mono text-xs text-center text-onSurface" id="qty-${product.id}" min="1" type="number" value="1"/>
+                        <button class="flex-1 bg-secondary text-on-secondary rounded py-1 text-xs font-semibold hover:opacity-90 add-btn" data-id="${product.id}">+ Add</button>
+                    </div>
+                `;
+                productGrid.appendChild(card);
+            });
+        };
+
+        productGrid.addEventListener('click', (e) => {
+            const btn = e.target.closest('.add-btn');
+            if (!btn) return;
+            if (!selectedEmployeeId) {
+                activeEmployeeLabel.classList.add('text-error', 'font-bold');
+                setTimeout(() => activeEmployeeLabel.classList.remove('text-error', 'font-bold'), 1000);
+                return;
+            }
+            const product = products.find(p => p.id === btn.dataset.id);
+            const qtyInput = document.getElementById(`qty-${product.id}`);
+            const qty = parseInt(qtyInput.value) || 1;
+
+            const existing = currentCart.find(i => i.name === product.name);
+            if (existing) existing.qty += qty;
+            else currentCart.push({ name: product.name, price: product.price, qty: qty });
+            qtyInput.value = 1;
+            updateCartUI();
+        });
+
+        const updateCartUI = () => {
+            cartList.innerHTML = '';
+            let total = 0;
+            if (currentCart.length === 0) {
+                emptyCartState.classList.remove('hidden');
+                cartList.classList.add('hidden');
+                btnFinalize.disabled = true;
+            } else {
+                emptyCartState.classList.add('hidden');
+                cartList.classList.remove('hidden');
+                btnFinalize.disabled = !selectedEmployeeId;
+
+                currentCart.forEach((item, index) => {
+                    const subtotal = item.price * item.qty;
+                    total += subtotal;
+                    const li = document.createElement('li');
+                    li.className = 'grid grid-cols-[1fr_100px_70px_110px_40px] gap-2 items-center py-2 px-3 border-b border-outlineVariant/40 text-xs';
+                    li.innerHTML = `
+                        <div class="font-medium text-onSurface truncate">${item.name}</div>
+                        <div class="font-mono text-right text-onSurfaceVariant">${formatCurrency(item.price)}</div>
+                        <div class="font-mono text-center bg-surface-container px-2 py-0.5 rounded text-onSurface">${item.qty}</div>
+                        <div class="font-mono text-right font-semibold text-onSurface">${formatCurrency(subtotal)}</div>
+                        <button onclick="removeItem(${index})" class="text-outline hover:text-error text-center"><span class="material-symbols-outlined text-base">delete</span></button>
+                    `;
+                    cartList.appendChild(li);
+                });
+            }
+            displayTotal.textContent = formatCurrency(total);
+        };
+
+        window.removeItem = (idx) => {
+            currentCart.splice(idx, 1);
+            updateCartUI();
+        };
+
+        // Finalizar Venda
+        btnFinalize.addEventListener('click', async () => {
+            if (currentCart.length === 0 || !selectedEmployeeId) return;
+            const emp = getSelectedEmployee();
+            const total = currentCart.reduce((sum, it) => sum + (it.price * it.qty), 0);
+            const now = new Date();
+
+            const sale = {
+                id: saleCounter++,
+                total: total,
+                itemsCount: currentCart.reduce((s, it) => s + it.qty, 0),
+                time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                date: now.toLocaleDateString('pt-BR'),
+                items: [...currentCart],
+                employeeId: selectedEmployeeId,
+                employeeName: emp ? emp.name : '—'
+            };
+
+            salesHistory.push(sale);
+            currentCart = [];
+            updateCartUI();
+            updateHistoryUI();
+            updateFullHistoryUI();
+            toast('✅ Venda registrada e geladeira atualizada!');
+
+            await api.send('addSale', { sale: sale });
+            
+            const updated = await api.load();
+            if (updated && updated.stock) {
+                stockData = updated.stock;
+                renderGeladeira();
+            }
+        });
+
+        // Render da Geladeira
+        const renderGeladeira = () => {
+            const grid = document.getElementById('geladeira-grid');
+            grid.innerHTML = '';
+            if (!stockData || stockData.length === 0) {
+                grid.innerHTML = '<p class="col-span-full text-center text-xs text-outline py-8">Carregando pratos prontos...</p>';
+                return;
+            }
+
+            stockData.forEach(item => {
+                const card = document.createElement('div');
+                const isReady = item.quantity > 0;
+                card.className = 'bg-surface-container-lowest border border-outlineVariant rounded-xl p-4 flex flex-col items-center text-center gap-2 shadow-sm';
+                card.innerHTML = `
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${isReady ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}">
+                        ${isReady ? 'Em Estoque' : 'Esgotado'}
+                    </span>
+                    <h3 class="text-sm font-semibold text-onSurface">${item.name}</h3>
+                    <div class="font-mono text-3xl font-bold ${isReady ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">${item.quantity}</div>
+                    <span class="text-[10px] text-outline">Fornada rende: ${item.batchSize} un.</span>
+                    <div class="flex gap-1 mt-2 w-full">
+                        <button onclick="alterarEstoque('${item.id}', -1)" class="flex-1 bg-surface border border-outlineVariant rounded py-1 text-xs font-bold text-onSurface hover:bg-surface-container">-1</button>
+                        <button onclick="alterarEstoque('${item.id}', 1)" class="flex-1 bg-surface border border-outlineVariant rounded py-1 text-xs font-bold text-onSurface hover:bg-surface-container">+1</button>
+                        <button onclick="alterarEstoque('${item.id}', ${item.batchSize})" class="flex-1 bg-primary text-on-primary rounded py-1 text-[10px] font-bold hover:opacity-90">+${item.batchSize}</button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        };
+
+        window.alterarEstoque = async (id, delta) => {
+            const item = stockData.find(s => String(s.id) === String(id));
+            if (!item) return;
+            item.quantity = Math.max(0, item.quantity + delta);
+            renderGeladeira();
+            await api.send('updateStock', { stockItem: { id: item.id, quantity: item.quantity } });
+        };
+
+        document.getElementById('btn-sync-stock').addEventListener('click', async () => {
+            toast('Sincronizando estoque...');
+            const data = await api.load();
+            if (data && data.stock) {
+                stockData = data.stock;
+                renderGeladeira();
+            }
+            if (data && data.insumos) {
+                insumosData = data.insumos;
+                renderInsumos();
+            }
+        });
+
+        // Render do Depósito de Insumos
+        const renderInsumos = () => {
+            const list = document.getElementById('insumos-list');
+            const search = (document.getElementById('insumo-search').value || '').trim().toLowerCase();
+            list.innerHTML = '';
+
+            const filtered = search ? insumosData.filter(i => i.name.toLowerCase().includes(search)) : insumosData;
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<p class="text-center text-xs text-outline py-8">Nenhum ingrediente encontrado no depósito.</p>';
+                return;
+            }
+
+            filtered.forEach(insumo => {
+                const li = document.createElement('li');
+                li.className = 'grid grid-cols-[1fr_120px_240px] gap-2 items-center py-2 px-3 border-b border-outlineVariant/40 text-xs hover:bg-surface-container-low rounded';
+                
+                let controlsHtml = '';
+                if (isManagerMode) {
+                    controlsHtml = `
+                        <div class="flex items-center justify-end gap-1">
+                            <button onclick="openInsumoModal('${insumo.id}')" class="px-2 py-1 bg-surface border border-outlineVariant rounded font-semibold text-primary hover:bg-surface-container flex items-center gap-1" title="Ajustar Quantidade">
+                                <span class="material-symbols-outlined text-sm">edit</span> Editar Qtd
+                            </button>
+                            <button onclick="adicionarInsumo('${insumo.id}', 10)" class="px-2 py-1 bg-surface border border-outlineVariant rounded font-bold text-onSurface hover:bg-primary hover:text-on-primary">+10</button>
+                            <button onclick="adicionarInsumo('${insumo.id}', 50)" class="px-2 py-1 bg-surface border border-outlineVariant rounded font-bold text-onSurface hover:bg-primary hover:text-on-primary">+50</button>
+                        </div>
+                    `;
+                } else {
+                    controlsHtml = `
+                        <div class="flex justify-end gap-1">
+                            <button onclick="adicionarInsumo('${insumo.id}', 10)" class="px-2 py-1 bg-surface border border-outlineVariant rounded font-bold text-onSurface hover:bg-primary hover:text-on-primary">+10</button>
+                            <button onclick="adicionarInsumo('${insumo.id}', 50)" class="px-2 py-1 bg-surface border border-outlineVariant rounded font-bold text-onSurface hover:bg-primary hover:text-on-primary">+50</button>
+                            <button onclick="adicionarInsumo('${insumo.id}', 100)" class="px-2 py-1 bg-surface border border-outlineVariant rounded font-bold text-onSurface hover:bg-primary hover:text-on-primary">+100</button>
+                        </div>
+                    `;
+                }
+
+                li.innerHTML = `
+                    <div class="font-semibold text-onSurface">${insumo.name}</div>
+                    <div class="font-mono text-center font-bold text-sm text-primary">${insumo.quantity}</div>
+                    ${controlsHtml}
+                `;
+                list.appendChild(li);
+            });
+        };
+
+        window.adicionarInsumo = async (id, delta) => {
+            const item = insumosData.find(i => String(i.id) === String(id));
+            if (!item) return;
+            item.quantity = Math.max(0, item.quantity + delta);
+            renderInsumos();
+            toast(`+${delta} ${item.name} adicionado(s) ao depósito!`);
+            await api.send('updateInsumo', { insumo: { id: item.id, quantity: item.quantity } });
+        };
+
+        // Modal com Seleção do Catálogo Oficial
+        window.openInsumoModal = (insumoId) => {
+            editingInsumoId = insumoId;
+            insumoModalError.classList.add('hidden');
+            if (insumoId) {
+                const item = insumosData.find(i => String(i.id) === String(insumoId));
+                insumoModalTitle.textContent = 'Ajustar Quantidade';
+                insumoFormSelect.value = item.name;
+                insumoFormSelect.disabled = true;
+                insumoStockPreview.classList.remove('hidden');
+                insumoCurrentQty.textContent = item.quantity;
+                insumoFormQuantity.value = item.quantity;
+                insumoFormDelete.classList.remove('hidden');
+            } else {
+                insumoModalTitle.textContent = 'Adicionar Item ao Depósito';
+                insumoFormSelect.value = '';
+                insumoFormSelect.disabled = false;
+                insumoStockPreview.classList.add('hidden');
+                insumoFormQuantity.value = 0;
+                insumoFormDelete.classList.add('hidden');
+            }
+            insumoModal.classList.remove('hidden');
+            insumoModal.classList.add('flex');
+            insumoFormQuantity.focus();
+        };
+
+        insumoFormSelect.addEventListener('change', () => {
+            const selectedName = insumoFormSelect.value;
+            if (!selectedName) {
+                insumoStockPreview.classList.add('hidden');
+                return;
+            }
+            const existing = insumosData.find(i => i.name === selectedName);
+            if (existing) {
+                insumoStockPreview.classList.remove('hidden');
+                insumoCurrentQty.textContent = existing.quantity;
+                insumoFormQuantity.value = existing.quantity;
+            } else {
+                insumoStockPreview.classList.remove('hidden');
+                insumoCurrentQty.textContent = '0 (Novo no depósito)';
+                insumoFormQuantity.value = 0;
+            }
+        });
+
+        const closeInsumoModal = () => {
+            insumoModal.classList.add('hidden');
+            insumoModal.classList.remove('flex');
+            editingInsumoId = null;
+        };
+
+        insumoModalClose.addEventListener('click', closeInsumoModal);
+        insumoModalCancel.addEventListener('click', closeInsumoModal);
+        btnAddInsumo.addEventListener('click', () => openInsumoModal(null));
+
+        insumoFormSave.addEventListener('click', async () => {
+            const selectedName = insumoFormSelect.value;
+            const qty = parseInt(insumoFormQuantity.value);
+
+            if (!selectedName) {
+                insumoModalError.textContent = 'Selecione um item da lista.';
+                insumoModalError.classList.remove('hidden');
+                return;
+            }
+            if (isNaN(qty) || qty < 0) {
+                insumoModalError.textContent = 'Informe uma quantidade válida.';
+                insumoModalError.classList.remove('hidden');
+                return;
+            }
+
+            let savedItem;
+            let isNew = false;
+            const existing = insumosData.find(i => i.name === selectedName);
+            if (existing) {
+                existing.quantity = qty;
+                savedItem = existing;
+            } else {
+                isNew = true;
+                const nextId = 'ins_' + Date.now();
+                savedItem = { id: nextId, name: selectedName, quantity: qty };
+                insumosData.push(savedItem);
+            }
+
+            renderInsumos();
+            closeInsumoModal();
+            toast(isNew ? `${savedItem.name} adicionado ao depósito!` : `${savedItem.name} atualizado para ${qty}!`);
+
+            await api.send('saveInsumo', { insumo: savedItem });
+        });
+
+        insumoFormDelete.addEventListener('click', async () => {
+            if (!editingInsumoId) return;
+            const item = insumosData.find(i => String(i.id) === String(editingInsumoId));
+            if (!confirm(`Remover "${item.name}" do depósito?`)) return;
+
+            insumosData = insumosData.filter(i => String(i.id) !== String(editingInsumoId));
+            renderInsumos();
+            closeInsumoModal();
+            toast('Item removido do depósito.');
+
+            await api.send('deleteInsumo', { id: editingInsumoId });
+        });
+
+        document.getElementById('insumo-search').addEventListener('input', renderInsumos);
+
+        // Turno Atual & Fechamento
+        const updateHistoryUI = () => {
+            historyList.innerHTML = '';
+            let totalTurno = 0;
+            const pendentes = selectedEmployeeId
+                ? salesHistory.filter(s => String(s.employeeId) === String(selectedEmployeeId) && !s.depositId)
+                : [];
+
+            if (!selectedEmployeeId || pendentes.length === 0) {
+                emptyHistoryState.classList.remove('hidden');
+                historyList.classList.add('hidden');
+                dayCounter.textContent = '0 VENDAS';
+                btnConfirmDeposit.disabled = true;
+            } else {
+                emptyHistoryState.classList.add('hidden');
+                historyList.classList.remove('hidden');
+                dayCounter.textContent = `${pendentes.length} VENDAS`;
+                btnConfirmDeposit.disabled = false;
+
+                [...pendentes].reverse().forEach(s => {
+                    totalTurno += s.total;
+                    const li = document.createElement('li');
+                    li.className = 'bg-surface border border-outlineVariant rounded-lg p-2 flex justify-between items-center text-xs';
+                    li.innerHTML = `
+                        <div>
+                            <div class="text-[10px] text-outline">VENDA #${s.id}</div>
+                            <div class="font-mono font-bold text-onSurface mt-0.5">${formatCurrency(s.total)}</div>
+                        </div>
+                        <div class="text-right text-outline text-[10px]">
+                            <div>${s.time}</div>
+                            <div class="text-primary font-bold">${s.itemsCount} itens</div>
+                        </div>
+                    `;
+                    historyList.appendChild(li);
+                });
+            }
+            updateCommissionUI(totalTurno);
+        };
+
+        const updateCommissionUI = (total) => {
+            const rate = parseFloat(inputCommRate.value) || 0;
+            const yourCut = total * (rate / 100);
+            const companyCut = total - yourCut;
+            dispTotalSales.textContent = formatCurrency(total);
+            dispYourCut.textContent = formatCurrency(yourCut);
+            dispCompanyCut.textContent = formatCurrency(companyCut);
+        };
+
+        // Depósito para a Empresa
+        btnConfirmDeposit.addEventListener('click', async () => {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            const pendentes = salesHistory.filter(s => String(s.employeeId) === String(emp.id) && !s.depositId);
+            if (pendentes.length === 0) return;
+
+            const total = pendentes.reduce((acc, s) => acc + s.total, 0);
+            const rate = parseFloat(inputCommRate.value) || 0;
+            const empCut = total * (rate / 100);
+            const compCut = total - empCut;
+
+            if (!confirm(`Confirmar depósito de ${formatCurrency(compCut)} para a empresa?\nIsso fechará o turno de ${emp.name}.`)) return;
+
+            const now = new Date();
+            const dep = {
+                id: String(depositCounter++),
+                employeeId: emp.id,
+                employeeName: emp.name,
+                dateTime: now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                totalSales: total,
+                commissionRate: rate,
+                employeeCut: empCut,
+                companyCut: compCut,
+                salesCount: pendentes.length
+            };
+
+            pendentes.forEach(s => { s.depositId = dep.id; });
+            deposits.push(dep);
+            updateHistoryUI();
+            updateFullHistoryUI();
+            updateDepositsUI();
+            toast(`Depósito confirmado! Turno de ${emp.name} zerado.`);
+
+            await api.send('confirmDeposit', { deposit: dep });
+        });
+
+        // Telas de Histórico e Depósitos da Gerência
+        const updateFullHistoryUI = () => {
+            fullHistoryList.innerHTML = '';
+            const list = historyFilterEmployeeId ? salesHistory.filter(s => s.employeeId === historyFilterEmployeeId) : salesHistory;
+            if (list.length === 0) {
+                emptyFullHistoryState.classList.remove('hidden');
+                fullHistoryList.classList.add('hidden');
+                return;
+            }
+            emptyFullHistoryState.classList.add('hidden');
+            fullHistoryList.classList.remove('hidden');
+
+            [...list].reverse().forEach(s => {
+                const li = document.createElement('li');
+                li.className = 'grid grid-cols-[80px_130px_1fr_90px_80px_110px] gap-2 items-center py-2 px-3 border-b border-outlineVariant/40 text-xs';
+                li.innerHTML = `
+                    <div class="font-mono">#${s.id}</div>
+                    <div class="truncate font-semibold text-onSurface">${s.employeeName}</div>
+                    <div class="truncate text-onSurfaceVariant">${s.items.map(it => `${it.qty}x ${it.name}`).join(', ')}</div>
+                    <div class="text-center text-outline">${s.date}</div>
+                    <div class="text-center text-outline">${s.time}</div>
+                    <div class="font-mono text-right font-bold text-onSurface">${formatCurrency(s.total)}</div>
+                `;
+                fullHistoryList.appendChild(li);
+            });
+        };
+
+        const updateDepositsUI = () => {
+            depositsList.innerHTML = '';
+            if (deposits.length === 0) {
+                emptyDepositsState.classList.remove('hidden');
+                depositsList.classList.add('hidden');
+                return;
+            }
+            emptyDepositsState.classList.add('hidden');
+            depositsList.classList.remove('hidden');
+
+            [...deposits].reverse().forEach(d => {
+                const li = document.createElement('li');
+                li.className = 'grid grid-cols-[130px_1fr_70px_100px_90px_100px_110px] gap-2 items-center py-2 px-3 border-b border-outlineVariant/40 text-xs';
+                li.innerHTML = `
+                    <div class="font-semibold text-onSurface">${d.employeeName}</div>
+                    <div class="text-outline">${d.dateTime}</div>
+                    <div class="text-center font-bold text-onSurface">${d.salesCount}</div>
+                    <div class="text-right font-mono text-onSurface">${formatCurrency(d.totalSales)}</div>
+                    <div class="text-right text-outline">${d.commissionRate}%</div>
+                    <div class="text-right font-mono text-onTertiaryContainer">${formatCurrency(d.employeeCut)}</div>
+                    <div class="text-right font-mono font-bold text-primary">${formatCurrency(d.companyCut)}</div>
+                `;
+                depositsList.appendChild(li);
+            });
+        };
+
+        // Gerência e Login
+        btnManagerToggle.addEventListener('click', () => {
+            if (isManagerMode) {
+                isManagerMode = false;
+                managerToggleLabel.textContent = 'Gerência';
+                navTabHistory.classList.add('hidden');
+                navTabDeposits.classList.add('hidden');
+                addEmployeeWrapper.classList.add('hidden');
+                btnAddInsumo.classList.add('hidden');
+                renderInsumos();
+                switchTab('dashboard');
+            } else {
+                managerPasswordInput.value = '';
+                managerModalError.classList.add('hidden');
+                managerModal.classList.remove('hidden');
+                managerModal.classList.add('flex');
+            }
+        });
+
+        managerModalConfirm.addEventListener('click', () => {
+            if (managerPasswordInput.value === MANAGER_PASSWORD) {
+                isManagerMode = true;
+                managerToggleLabel.textContent = 'Gerência (Ativa)';
+                navTabHistory.classList.remove('hidden');
+                navTabDeposits.classList.remove('hidden');
+                addEmployeeWrapper.classList.remove('hidden');
+                btnAddInsumo.classList.remove('hidden');
+                managerModal.classList.add('hidden');
+                managerModal.classList.remove('flex');
+                renderInsumos();
+                toast('Acesso de gerência liberado!');
+            } else {
+                managerModalError.classList.remove('hidden');
+            }
+        });
+
+        managerModalCancel.addEventListener('click', () => {
+            managerModal.classList.add('hidden');
+            managerModal.classList.remove('flex');
+        });
+
+        employeeListEl.addEventListener('click', (e) => {
+            const btn = e.target.closest('.employee-btn');
+            if (btn) selectEmployee(btn.dataset.employeeId);
+        });
+
+        productSearchInput.addEventListener('input', renderProducts);
+
+        // Inicialização
+        renderProducts();
+        renderEmployeeList();
+        updateCartUI();
+
+        // Carrega dados da planilha
+        const data = await api.load();
+        if (data) {
+            if (data.products && data.products.length) products = data.products;
+            if (data.employees && data.employees.length) employees = data.employees;
+            if (data.sales) salesHistory = data.sales;
+            if (data.deposits) deposits = data.deposits;
+            if (data.stock) stockData = data.stock;
+            if (data.insumos) insumosData = data.insumos;
+            renderProducts();
+            renderEmployeeList();
+            renderGeladeira();
+            renderInsumos();
+        }
+    });
+</script>
+</body>
+</html>
