@@ -23,24 +23,24 @@
       theme: {
         extend: {
           colors: {
-            primary: '#003d9b',
-            'primary-container': '#0052cc',
-            'on-primary': '#ffffff',
-            secondary: '#4c5e85',
-            'on-secondary': '#ffffff',
-            surface: '#f8f9fb',
-            'surface-container-lowest': '#ffffff',
-            'surface-container-low': '#f3f4f6',
-            'surface-container': '#edeef0',
-            'surface-container-high': '#e7e8ea',
-            'on-surface': '#191c1e',
-            'on-surface-variant': '#434654',
-            outline: '#737685',
-            'outline-variant': '#c3c6d6',
-            background: '#f8f9fb',
-            error: '#ba1a1a',
+            primary: 'var(--c-primary)',
+            'primary-container': 'var(--c-primary-container)',
+            'on-primary': 'var(--c-on-primary)',
+            secondary: 'var(--c-secondary)',
+            'on-secondary': 'var(--c-on-secondary)',
+            surface: 'var(--c-surface)',
+            'surface-container-lowest': 'var(--c-surface-container-lowest)',
+            'surface-container-low': 'var(--c-surface-container-low)',
+            'surface-container': 'var(--c-surface-container)',
+            'surface-container-high': 'var(--c-surface-container-high)',
+            'on-surface': 'var(--c-on-surface)',
+            'on-surface-variant': 'var(--c-on-surface-variant)',
+            outline: 'var(--c-outline)',
+            'outline-variant': 'var(--c-outline-variant)',
+            background: 'var(--c-background)',
+            error: 'var(--c-error)',
             'on-error': '#ffffff',
-            'tertiary-container': '#006842',
+            'tertiary-container': 'var(--c-tertiary-container)',
             'on-tertiary-container': '#ffffff'
           },
           fontFamily: {
@@ -56,9 +56,50 @@
     }
 </script>
 <style>
+    :root {
+        --c-background: #f8f9fb;
+        --c-surface: #f8f9fb;
+        --c-surface-container-lowest: #ffffff;
+        --c-surface-container-low: #f3f4f6;
+        --c-surface-container: #edeef0;
+        --c-surface-container-high: #e7e8ea;
+        --c-on-surface: #191c1e;
+        --c-on-surface-variant: #434654;
+        --c-primary: #003d9b;
+        --c-primary-container: #0052cc;
+        --c-on-primary: #ffffff;
+        --c-secondary: #4c5e85;
+        --c-on-secondary: #ffffff;
+        --c-outline: #737685;
+        --c-outline-variant: #c3c6d6;
+        --c-error: #ba1a1a;
+        --c-tertiary-container: #006842;
+    }
+
+    html.dark {
+        --c-background: #101418;
+        --c-surface: #101418;
+        --c-surface-container-lowest: #151a21;
+        --c-surface-container-low: #1c222c;
+        --c-surface-container: #232a36;
+        --c-surface-container-high: #2c3545;
+        --c-on-surface: #e1e2e4;
+        --c-on-surface-variant: #a0a6b5;
+        --c-primary: #4d8df5;
+        --c-primary-container: #1e5bc6;
+        --c-on-primary: #ffffff;
+        --c-secondary: #8da2cc;
+        --c-on-secondary: #0c1527;
+        --c-outline: #686f80;
+        --c-outline-variant: #2c3442;
+        --c-error: #ffb4ab;
+        --c-tertiary-container: #1b8756;
+    }
+
+    body { transition: background-color 0.2s ease, color 0.2s ease; }
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #c3c6d6; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: var(--c-outline-variant); border-radius: 10px; }
     @keyframes slideInFade {
         from { opacity: 0; transform: translateY(8px); }
         to { opacity: 1; transform: translateY(0); }
@@ -115,9 +156,9 @@
     </div>
 </nav>
 
-<!-- Modais de Gerência e Edição -->
-<div class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 p-4" id="manager-modal">
-    <div class="bg-surface-container-lowest rounded-xl shadow-lg w-full max-w-[380px] p-6 flex flex-col gap-4">
+<!-- Modal Gerência -->
+<div class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4" id="manager-modal">
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-2xl w-full max-w-[380px] p-6 flex flex-col gap-4">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <span class="material-symbols-outlined text-secondary">lock</span>
@@ -125,7 +166,7 @@
             </div>
             <button class="text-outline hover:text-on-surface" id="manager-modal-close" type="button"><span class="material-symbols-outlined">close</span></button>
         </div>
-        <p class="text-xs text-on-surface-variant">Informe a senha para ter acesso administrativo.</p>
+        <p class="text-xs text-on-surface-variant">Informe a senha para liberar o controle administrativo.</p>
         <div>
             <input autocomplete="off" class="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 font-data-mono text-on-surface focus:border-primary focus:outline-none" id="manager-password-input" type="password" placeholder="Senha..."/>
             <p class="text-xs text-error mt-1 hidden" id="manager-modal-error">Senha incorreta.</p>
@@ -137,8 +178,9 @@
     </div>
 </div>
 
-<div class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 p-4" id="employee-modal">
-    <div class="bg-surface-container-lowest rounded-xl shadow-lg w-full max-w-[380px] p-6 flex flex-col gap-4">
+<!-- Modal Funcionário -->
+<div class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4" id="employee-modal">
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-2xl w-full max-w-[380px] p-6 flex flex-col gap-4">
         <div class="flex items-center justify-between">
             <h3 class="font-headline-sm font-semibold text-on-surface" id="employee-modal-title">Editar Funcionário</h3>
             <button class="text-outline hover:text-on-surface" id="employee-modal-close" type="button"><span class="material-symbols-outlined">close</span></button>
@@ -157,6 +199,32 @@
             <div class="flex gap-2 ml-auto">
                 <button class="px-4 py-2 rounded-lg text-xs font-semibold text-on-surface-variant hover:bg-surface-container" id="employee-modal-cancel" type="button">Cancelar</button>
                 <button class="px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-on-primary" id="employee-form-save" type="button">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Insumo (Gerência: Adicionar / Editar Insumo Manualmente) -->
+<div class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4" id="insumo-modal">
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-2xl w-full max-w-[380px] p-6 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+            <h3 class="font-headline-sm font-semibold text-on-surface" id="insumo-modal-title">Novo Insumo</h3>
+            <button class="text-outline hover:text-on-surface" id="insumo-modal-close" type="button"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <div>
+            <label class="text-xs font-semibold text-on-surface-variant mb-1 block">Nome do Ingrediente</label>
+            <input class="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" id="insumo-form-name" type="text" placeholder="Ex: Bacon, Frango Desfiado..."/>
+        </div>
+        <div>
+            <label class="text-xs font-semibold text-on-surface-variant mb-1 block">Quantidade no Depósito</label>
+            <input class="w-full bg-surface border border-outline-variant rounded-lg px-3 py-2 font-data-mono text-sm text-on-surface focus:border-primary focus:outline-none" id="insumo-form-quantity" min="0" step="1" type="number" value="0"/>
+        </div>
+        <p class="text-xs text-error hidden" id="insumo-modal-error"></p>
+        <div class="flex items-center justify-between gap-2 mt-2">
+            <button class="text-error text-xs font-semibold hover:underline hidden" id="insumo-form-delete" type="button">Excluir</button>
+            <div class="flex gap-2 ml-auto">
+                <button class="px-4 py-2 rounded-lg text-xs font-semibold text-on-surface-variant hover:bg-surface-container" id="insumo-modal-cancel" type="button">Cancelar</button>
+                <button class="px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-on-primary" id="insumo-form-save" type="button">Salvar Insumo</button>
             </div>
         </div>
     </div>
@@ -236,7 +304,7 @@
         <header class="mb-4 flex justify-between items-end gap-4">
             <div>
                 <h2 class="font-headline-md font-bold text-2xl text-on-surface">❄️ Geladeira &amp; Pratos Prontos</h2>
-                <p class="text-xs text-on-surface-variant mt-1">Comidas já produzidas prontas para venda. As sobras das fornadas entram aqui automaticamente.</p>
+                <p class="text-xs text-on-surface-variant mt-1">Comidas já produzidas prontas para venda. Sobras de fornadas entram aqui automaticamente.</p>
             </div>
             <button class="px-3 py-2 bg-surface border border-outline-variant rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-surface-container" id="btn-sync-stock" type="button">
                 <span class="material-symbols-outlined text-sm">sync</span> Atualizar
@@ -252,17 +320,22 @@
         <header class="mb-4 flex justify-between items-end gap-4">
             <div>
                 <h2 class="font-headline-md font-bold text-2xl text-on-surface">📦 Depósito &amp; Despensa de Insumos</h2>
-                <p class="text-xs text-on-surface-variant mt-1">Ingredientes brutos comprados dos fornecedores. Clique nos botões para dar entrada rápida de estoque.</p>
+                <p class="text-xs text-on-surface-variant mt-1">Ingredientes brutos para a cozinha. Na Gerência, você pode adicionar novos ingredientes ou digitar a quantidade exata.</p>
             </div>
-            <div class="relative min-w-[220px]">
-                <input class="w-full bg-surface border border-outline-variant rounded-lg pl-3 pr-3 py-2 text-xs text-on-surface focus:border-primary focus:outline-none" id="insumo-search" placeholder="Buscar ingrediente..." type="text"/>
+            <div class="flex items-center gap-2">
+                <button class="px-3 py-2 bg-primary text-on-primary rounded-lg text-xs font-bold flex items-center gap-1 hover:opacity-90 hidden" id="btn-add-insumo" type="button">
+                    <span class="material-symbols-outlined text-base">add</span> Novo Insumo
+                </button>
+                <div class="relative min-w-[200px]">
+                    <input class="w-full bg-surface border border-outline-variant rounded-lg pl-3 pr-3 py-2 text-xs text-on-surface focus:border-primary focus:outline-none" id="insumo-search" placeholder="Buscar ingrediente..." type="text"/>
+                </div>
             </div>
         </header>
         <div class="flex-1 bg-surface-container-lowest border border-outline-variant rounded-xl flex flex-col overflow-hidden shadow-sm">
-            <div class="bg-surface-container-low border-b border-outline-variant px-4 py-2 grid grid-cols-[1fr_120px_220px] gap-2 items-center text-xs font-bold uppercase text-on-surface-variant">
+            <div class="bg-surface-container-low border-b border-outline-variant px-4 py-2 grid grid-cols-[1fr_120px_240px] gap-2 items-center text-xs font-bold uppercase text-on-surface-variant">
                 <span>Ingrediente / Matéria-Prima</span>
                 <span class="text-center">Qtd Atual</span>
-                <span class="text-right">Adicionar Insumos</span>
+                <span class="text-right">Ajuste de Estoque</span>
             </div>
             <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
                 <ul class="flex flex-col gap-1" id="insumos-list"></ul>
@@ -330,7 +403,7 @@
         </div>
     </main>
 
-    <!-- Sidebar Direita: Turno Atual e Fechamento -->
+    <!-- Sidebar Direita -->
     <aside class="w-[330px] border-l border-outline-variant bg-surface-container-lowest flex flex-col z-30 shadow-sm" id="right-sidebar">
         <div class="p-4 border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest sticky top-0 z-10">
             <div class="flex items-center gap-2">
@@ -367,7 +440,7 @@
                 </div>
                 <div class="flex justify-between items-center">
                     <span class="text-on-surface-variant">Parte do Funcionário:</span>
-                    <span class="font-data-mono font-bold text-tertiary-container bg-green-100 px-1 rounded" id="disp-your-cut">$0,00</span>
+                    <span class="font-data-mono font-bold text-tertiary-container bg-green-100 dark:bg-green-900/40 px-1 rounded" id="disp-your-cut">$0,00</span>
                 </div>
                 <div class="h-px w-full bg-outline-variant my-1"></div>
                 <div class="flex justify-between items-center">
@@ -385,7 +458,7 @@
 
 <!-- Lógica JavaScript -->
 <script>
-    const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwm4ryK7Ru8kVslzardq1CkukZUWyQhmN66SSOZG59sSQpGhcHMpuXoBvyjWYR99xtepw/exec';
+    const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwm4ryK7Ru8kVslzardq1CkukZUWyQhmN66SSOZG59sSQpGhcHMpuXoBvyjWYR99xtepw/exec';[cite: 2]
 
     const api = {
         async load() {
@@ -421,8 +494,8 @@
         let stockData = [];
         let insumosData = [];
         let saleCounter = 1001;
-        let productCounter = 10;
         let depositCounter = 1;
+        let editingInsumoId = null;
 
         let products = [
             { id: 'p1', name: 'Feijoada', price: 150.00, image: 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?w=300' },
@@ -435,7 +508,7 @@
             { id: 'p8', name: 'Pipoca Salgada', price: 90.00, image: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?w=300' }
         ];
 
-        const MANAGER_PASSWORD = 'Fodase1236';
+        const MANAGER_PASSWORD = 'Hh2026_FS';
         let isManagerMode = false;
 
         let employees = [
@@ -488,6 +561,17 @@
         const depositsList = document.getElementById('deposits-list');
         const emptyDepositsState = document.getElementById('empty-deposits-state');
         const btnConfirmDeposit = document.getElementById('btn-confirm-deposit');
+        const btnAddInsumo = document.getElementById('btn-add-insumo');
+
+        const insumoModal = document.getElementById('insumo-modal');
+        const insumoModalTitle = document.getElementById('insumo-modal-title');
+        const insumoFormName = document.getElementById('insumo-form-name');
+        const insumoFormQuantity = document.getElementById('insumo-form-quantity');
+        const insumoModalError = document.getElementById('insumo-modal-error');
+        const insumoFormDelete = document.getElementById('insumo-form-delete');
+        const insumoFormSave = document.getElementById('insumo-form-save');
+        const insumoModalClose = document.getElementById('insumo-modal-close');
+        const insumoModalCancel = document.getElementById('insumo-modal-cancel');
 
         const toastContainer = document.getElementById('toast-container');
         const navTabs = document.querySelectorAll('.nav-tab');
@@ -513,6 +597,22 @@
                 setTimeout(() => el.remove(), 300);
             }, 2500);
         };
+
+        // Tema Escuro / Claro
+        const applyTheme = (theme) => {
+            const isDark = theme === 'dark';
+            document.documentElement.classList.toggle('dark', isDark);
+            themeToggleIcon.textContent = isDark ? 'light_mode' : 'dark_mode';
+            themeToggleLabel.textContent = isDark ? 'Tema Claro' : 'Tema Escuro';
+            localStorage.setItem('theme', theme);
+        };
+
+        btnThemeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            applyTheme(isDark ? 'light' : 'dark');
+        });
+
+        applyTheme(localStorage.getItem('theme') === 'dark' ? 'dark' : 'light');
 
         const renderEmployeeList = () => {
             employeeListEl.innerHTML = '';
@@ -600,8 +700,8 @@
                     <h3 class="text-xs font-semibold text-on-surface truncate">${product.name}</h3>
                     <p class="font-data-mono text-xs text-primary font-bold">${formatCurrency(product.price)}</p>
                     <div class="flex items-center gap-1 mt-auto">
-                        <input class="w-12 bg-surface border border-outline-variant rounded px-1 py-1 font-data-mono text-xs text-center" id="qty-${product.id}" min="1" type="number" value="1"/>
-                        <button class="flex-1 bg-secondary text-white rounded py-1 text-xs font-semibold hover:opacity-90 add-btn" data-id="${product.id}">+ Add</button>
+                        <input class="w-12 bg-surface border border-outline-variant rounded px-1 py-1 font-data-mono text-xs text-center text-on-surface" id="qty-${product.id}" min="1" type="number" value="1"/>
+                        <button class="flex-1 bg-secondary text-on-secondary rounded py-1 text-xs font-semibold hover:opacity-90 add-btn" data-id="${product.id}">+ Add</button>
                     </div>
                 `;
                 productGrid.appendChild(card);
@@ -647,8 +747,8 @@
                     li.innerHTML = `
                         <div class="font-medium text-on-surface truncate">${item.name}</div>
                         <div class="font-data-mono text-right text-on-surface-variant">${formatCurrency(item.price)}</div>
-                        <div class="font-data-mono text-center bg-surface-container px-2 py-0.5 rounded">${item.qty}</div>
-                        <div class="font-data-mono text-right font-semibold">${formatCurrency(subtotal)}</div>
+                        <div class="font-data-mono text-center bg-surface-container px-2 py-0.5 rounded text-on-surface">${item.qty}</div>
+                        <div class="font-data-mono text-right font-semibold text-on-surface">${formatCurrency(subtotal)}</div>
                         <button onclick="removeItem(${index})" class="text-outline hover:text-error text-center"><span class="material-symbols-outlined text-base">delete</span></button>
                     `;
                     cartList.appendChild(li);
@@ -689,7 +789,6 @@
 
             await api.send('addSale', { sale: sale });
             
-            // Recarrega o estoque atualizado pelo backend
             const updated = await api.load();
             if (updated && updated.stock) {
                 stockData = updated.stock;
@@ -711,16 +810,16 @@
                 const isReady = item.quantity > 0;
                 card.className = 'bg-surface-container-lowest border border-outline-variant rounded-xl p-4 flex flex-col items-center text-center gap-2 shadow-sm';
                 card.innerHTML = `
-                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${isReady ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${isReady ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}">
                         ${isReady ? 'Em Estoque' : 'Esgotado'}
                     </span>
                     <h3 class="text-sm font-semibold text-on-surface">${item.name}</h3>
-                    <div class="font-data-mono text-3xl font-bold ${isReady ? 'text-green-700' : 'text-red-600'}">${item.quantity}</div>
+                    <div class="font-data-mono text-3xl font-bold ${isReady ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">${item.quantity}</div>
                     <span class="text-[10px] text-outline">Fornada rende: ${item.batchSize} un.</span>
                     <div class="flex gap-1 mt-2 w-full">
-                        <button onclick="alterarEstoque('${item.id}', -1)" class="flex-1 bg-surface border border-outline-variant rounded py-1 text-xs font-bold hover:bg-surface-container">-1</button>
-                        <button onclick="alterarEstoque('${item.id}', 1)" class="flex-1 bg-surface border border-outline-variant rounded py-1 text-xs font-bold hover:bg-surface-container">+1</button>
-                        <button onclick="alterarEstoque('${item.id}', ${item.batchSize})" class="flex-1 bg-primary text-white rounded py-1 text-[10px] font-bold hover:opacity-90">+${item.batchSize}</button>
+                        <button onclick="alterarEstoque('${item.id}', -1)" class="flex-1 bg-surface border border-outline-variant rounded py-1 text-xs font-bold text-on-surface hover:bg-surface-container">-1</button>
+                        <button onclick="alterarEstoque('${item.id}', 1)" class="flex-1 bg-surface border border-outline-variant rounded py-1 text-xs font-bold text-on-surface hover:bg-surface-container">+1</button>
+                        <button onclick="alterarEstoque('${item.id}', ${item.batchSize})" class="flex-1 bg-primary text-on-primary rounded py-1 text-[10px] font-bold hover:opacity-90">+${item.batchSize}</button>
                     </div>
                 `;
                 grid.appendChild(card);
@@ -748,7 +847,7 @@
             }
         });
 
-        // Render do Depósito de Insumos
+        // Render do Depósito de Insumos (com Modo Gerência Manual)
         const renderInsumos = () => {
             const list = document.getElementById('insumos-list');
             const search = (document.getElementById('insumo-search').value || '').trim().toLowerCase();
@@ -757,21 +856,39 @@
             const filtered = search ? insumosData.filter(i => i.name.toLowerCase().includes(search)) : insumosData;
 
             if (filtered.length === 0) {
-                list.innerHTML = '<p class="text-center text-xs text-outline py-8">Nenhum ingrediente no depósito.</p>';
+                list.innerHTML = '<p class="text-center text-xs text-outline py-8">Nenhum ingrediente encontrado no depósito.</p>';
                 return;
             }
 
             filtered.forEach(insumo => {
                 const li = document.createElement('li');
-                li.className = 'grid grid-cols-[1fr_120px_220px] gap-2 items-center py-2 px-3 border-b border-outline-variant/40 text-xs hover:bg-surface-container-low rounded';
+                li.className = 'grid grid-cols-[1fr_120px_240px] gap-2 items-center py-2 px-3 border-b border-outline-variant/40 text-xs hover:bg-surface-container-low rounded';
+                
+                let controlsHtml = '';
+                if (isManagerMode) {
+                    controlsHtml = `
+                        <div class="flex items-center justify-end gap-1">
+                            <button onclick="openInsumoModal('${insumo.id}')" class="px-2 py-1 bg-surface border border-outline-variant rounded font-semibold text-primary hover:bg-surface-container flex items-center gap-1" title="Editar / Digitar Quantidade">
+                                <span class="material-symbols-outlined text-sm">edit</span> Editar Qtd
+                            </button>
+                            <button onclick="adicionarInsumo('${insumo.id}', 10)" class="px-2 py-1 bg-surface border border-outline-variant rounded font-bold text-on-surface hover:bg-primary hover:text-on-primary">+10</button>
+                            <button onclick="adicionarInsumo('${insumo.id}', 50)" class="px-2 py-1 bg-surface border border-outline-variant rounded font-bold text-on-surface hover:bg-primary hover:text-on-primary">+50</button>
+                        </div>
+                    `;
+                } else {
+                    controlsHtml = `
+                        <div class="flex justify-end gap-1">
+                            <button onclick="adicionarInsumo('${insumo.id}', 10)" class="px-2 py-1 bg-surface border border-outline-variant rounded font-bold text-on-surface hover:bg-primary hover:text-on-primary">+10</button>
+                            <button onclick="adicionarInsumo('${insumo.id}', 50)" class="px-2 py-1 bg-surface border border-outline-variant rounded font-bold text-on-surface hover:bg-primary hover:text-on-primary">+50</button>
+                            <button onclick="adicionarInsumo('${insumo.id}', 100)" class="px-2 py-1 bg-surface border border-outline-variant rounded font-bold text-on-surface hover:bg-primary hover:text-on-primary">+100</button>
+                        </div>
+                    `;
+                }
+
                 li.innerHTML = `
                     <div class="font-semibold text-on-surface">${insumo.name}</div>
                     <div class="font-data-mono text-center font-bold text-sm text-primary">${insumo.quantity}</div>
-                    <div class="flex justify-end gap-1">
-                        <button onclick="adicionarInsumo('${insumo.id}', 10)" class="px-2 py-1 bg-surface border border-outline-variant rounded font-bold hover:bg-primary hover:text-white">+10</button>
-                        <button onclick="adicionarInsumo('${insumo.id}', 50)" class="px-2 py-1 bg-surface border border-outline-variant rounded font-bold hover:bg-primary hover:text-white">+50</button>
-                        <button onclick="adicionarInsumo('${insumo.id}', 100)" class="px-2 py-1 bg-surface border border-outline-variant rounded font-bold hover:bg-primary hover:text-white">+100</button>
-                    </div>
+                    ${controlsHtml}
                 `;
                 list.appendChild(li);
             });
@@ -785,6 +902,85 @@
             toast(`+${delta} ${item.name} adicionado(s) ao depósito!`);
             await api.send('updateInsumo', { insumo: { id: item.id, quantity: item.quantity } });
         };
+
+        // Modal de Adicionar / Ajustar Insumo Manualmente
+        window.openInsumoModal = (insumoId) => {
+            editingInsumoId = insumoId;
+            insumoModalError.classList.add('hidden');
+            if (insumoId) {
+                const item = insumosData.find(i => String(i.id) === String(insumoId));
+                insumoModalTitle.textContent = 'Ajustar Insumo';
+                insumoFormName.value = item.name;
+                insumoFormQuantity.value = item.quantity;
+                insumoFormDelete.classList.remove('hidden');
+            } else {
+                insumoModalTitle.textContent = 'Novo Insumo';
+                insumoFormName.value = '';
+                insumoFormQuantity.value = 0;
+                insumoFormDelete.classList.add('hidden');
+            }
+            insumoModal.classList.remove('hidden');
+            insumoModal.classList.add('flex');
+            insumoFormName.focus();
+        };
+
+        const closeInsumoModal = () => {
+            insumoModal.classList.add('hidden');
+            insumoModal.classList.remove('flex');
+            editingInsumoId = null;
+        };
+
+        insumoModalClose.addEventListener('click', closeInsumoModal);
+        insumoModalCancel.addEventListener('click', closeInsumoModal);
+        btnAddInsumo.addEventListener('click', () => openInsumoModal(null));
+
+        insumoFormSave.addEventListener('click', async () => {
+            const name = insumoFormName.value.trim();
+            const qty = parseInt(insumoFormQuantity.value);
+
+            if (!name) {
+                insumoModalError.textContent = 'Informe o nome do insumo.';
+                insumoModalError.classList.remove('hidden');
+                return;
+            }
+            if (isNaN(qty) || qty < 0) {
+                insumoModalError.textContent = 'Informe uma quantidade válida.';
+                insumoModalError.classList.remove('hidden');
+                return;
+            }
+
+            let savedItem;
+            let isNew = false;
+            if (editingInsumoId) {
+                savedItem = insumosData.find(i => String(i.id) === String(editingInsumoId));
+                savedItem.name = name;
+                savedItem.quantity = qty;
+            } else {
+                isNew = true;
+                const nextId = 'ins_' + Date.now();
+                savedItem = { id: nextId, name: name, quantity: qty };
+                insumosData.push(savedItem);
+            }
+
+            renderInsumos();
+            closeInsumoModal();
+            toast(isNew ? 'Insumo cadastrado com sucesso!' : 'Insumo atualizado!');
+
+            await api.send('saveInsumo', { insumo: savedItem });
+        });
+
+        insumoFormDelete.addEventListener('click', async () => {
+            if (!editingInsumoId) return;
+            const item = insumosData.find(i => String(i.id) === String(editingInsumoId));
+            if (!confirm(`Remover "${item.name}" do depósito de insumos?`)) return;
+
+            insumosData = insumosData.filter(i => String(i.id) !== String(editingInsumoId));
+            renderInsumos();
+            closeInsumoModal();
+            toast('Insumo removido do depósito.');
+
+            await api.send('deleteInsumo', { id: editingInsumoId });
+        });
 
         document.getElementById('insumo-search').addEventListener('input', renderInsumos);
 
@@ -889,12 +1085,12 @@
                 const li = document.createElement('li');
                 li.className = 'grid grid-cols-[80px_130px_1fr_90px_80px_110px] gap-2 items-center py-2 px-3 border-b border-outline-variant/40 text-xs';
                 li.innerHTML = `
-                    <div class="font-data-mono">#${s.id}</div>
-                    <div class="truncate font-semibold">${s.employeeName}</div>
+                    <div class="font-data-mono text-on-surface">#${s.id}</div>
+                    <div class="truncate font-semibold text-on-surface">${s.employeeName}</div>
                     <div class="truncate text-on-surface-variant">${s.items.map(it => `${it.qty}x ${it.name}`).join(', ')}</div>
                     <div class="text-center text-outline">${s.date}</div>
                     <div class="text-center text-outline">${s.time}</div>
-                    <div class="font-data-mono text-right font-bold">${formatCurrency(s.total)}</div>
+                    <div class="font-data-mono text-right font-bold text-on-surface">${formatCurrency(s.total)}</div>
                 `;
                 fullHistoryList.appendChild(li);
             });
@@ -914,12 +1110,12 @@
                 const li = document.createElement('li');
                 li.className = 'grid grid-cols-[130px_1fr_70px_100px_90px_100px_110px] gap-2 items-center py-2 px-3 border-b border-outline-variant/40 text-xs';
                 li.innerHTML = `
-                    <div class="font-semibold">${d.employeeName}</div>
+                    <div class="font-semibold text-on-surface">${d.employeeName}</div>
                     <div class="text-outline">${d.dateTime}</div>
-                    <div class="text-center font-bold">${d.salesCount}</div>
-                    <div class="text-right font-data-mono">${formatCurrency(d.totalSales)}</div>
+                    <div class="text-center font-bold text-on-surface">${d.salesCount}</div>
+                    <div class="text-right font-data-mono text-on-surface">${formatCurrency(d.totalSales)}</div>
                     <div class="text-right text-outline">${d.commissionRate}%</div>
-                    <div class="text-right font-data-mono text-green-700">${formatCurrency(d.employeeCut)}</div>
+                    <div class="text-right font-data-mono text-tertiary-container">${formatCurrency(d.employeeCut)}</div>
                     <div class="text-right font-data-mono font-bold text-primary">${formatCurrency(d.companyCut)}</div>
                 `;
                 depositsList.appendChild(li);
@@ -934,6 +1130,8 @@
                 navTabHistory.classList.add('hidden');
                 navTabDeposits.classList.add('hidden');
                 addEmployeeWrapper.classList.add('hidden');
+                btnAddInsumo.classList.add('hidden');
+                renderInsumos();
                 switchTab('dashboard');
             } else {
                 managerPasswordInput.value = '';
@@ -950,8 +1148,10 @@
                 navTabHistory.classList.remove('hidden');
                 navTabDeposits.classList.remove('hidden');
                 addEmployeeWrapper.classList.remove('hidden');
+                btnAddInsumo.classList.remove('hidden');
                 managerModal.classList.add('hidden');
                 managerModal.classList.remove('flex');
+                renderInsumos();
                 toast('Acesso de gerência liberado!');
             } else {
                 managerModalError.classList.remove('hidden');
@@ -975,7 +1175,7 @@
         renderEmployeeList();
         updateCartUI();
 
-        // Carrega os dados da planilha
+        // Carrega dados da planilha
         const data = await api.load();
         if (data) {
             if (data.products && data.products.length) products = data.products;
